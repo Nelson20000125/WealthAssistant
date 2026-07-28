@@ -1,0 +1,198 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum AccountType {
+  BROKERAGE
+  FUND
+  BANK
+  CRYPTO
+}
+
+enum AssetType {
+  STOCK
+  ETF
+  FUND
+  CRYPTO
+  CASH
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  INVEST // 投资投入：钱从现金变资产，不是支出（记支出会让月度报表虚高）
+  TRANSFER // 内部转帐（如转去 TNG 电子钱包）：钱还是自己的，不算支出也不算投资
+}
+
+enum TransactionSource {
+  MANUAL
+  STATEMENT_IMPORT
+}
+
+// 登入用户，多用户各自持有独立的资产/收支记录
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts      Account[]
+  categories    Category[]
+  transactions  Transaction[]
+  importBatches ImportBatch[]
+  goals         Goal[]
+  snapshots     PortfolioSnapshot[]
+}
+
+// 一个资金来源户口：moomoo 证券户、Public Mutual 基金户、Public Bank 现金户等
+model Account {
+  id          String      @id @default(cuid())
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  name        String
+  type        AccountType
+  institution String
+  currency    String // 户口原生货币，如 MYR / USD
+  holdings    Holding[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+// 户口里的一笔持仓：股票/ETF/基金持仓，或单纯现金余额
+model Holding {
+  id         String    @id @default(cuid())
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId  String
+  assetType  AssetType
+  symbol     String? // 有报价代号的才填，如 VOO；现金/无代号基金留空
+  name       String
+  quantity   Float // 股数/份额；现金类可以直接当金额存这里，quantity=1
+  costBasis  Float // 每单位成本，现金类等于面额
+  currency   String // 这笔持仓的计价货币
+  lastPrice  Float? // 快取的最新报价（每单位），现金类等于 costBasis
+  priceAsOf  DateTime?
+  investTransactions Transaction[] @relation("InvestTarget") // 买入这笔持仓的投资记录
+  cashTransactions   Transaction[] @relation("InvestCash") // 从这笔现金持仓扣款的投资记录
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+// 行情报价快取，减少打第三方行情 API 的次数（Yahoo 无日额度但仍会限流）
+model PriceCache {
+  id        String   @id @default(cuid())
+  symbol    String   @unique
+  price     Float
+  currency  String
+  source    String // ALPHA_VANTAGE / COINGECKO
+  fetchedAt DateTime @default(now())
+}
+
+// 汇率快取，如 USD->MYR
+model FxRate {
+  id        String   @id @default(cuid())
+  base      String
+  quote     String
+  rate      Float
+  fetchedAt DateTime @default(now())
+
+  @@unique([base, quote])
+}
+
+// 消费/收入/投资分类。同名分类可在不同 type 下并存（如「其他」）
+model Category {
+  id           String          @id @default(cuid())
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  name         String
+  type         TransactionType @default(EXPENSE)
+  rules        CategoryRule[]
+  transactions Transaction[]
+
+  @@unique([userId, name, type])
+}
+
+// 关键字比对规则：对帐单上的描述文字命中关键字，就自动归类到对应 Category
+model CategoryRule {
+  id         String   @id @default(cuid())
+  keyword    String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId String
+}
+
+// 一笔收入/支出/投资纪录，手动记的或从对帐单汇入的都存这里
+model Transaction {
+  id         String            @id @default(cuid())
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  date       DateTime
+  amount     Float
+  currency   String
+  type       TransactionType
+  description String
+  category   Category?         @relation(fields: [categoryId], references: [id])
+  categoryId String?
+  source     TransactionSource
+  importBatch   ImportBatch?   @relation(fields: [importBatchId], references: [id])
+  importBatchId String?
+
+  // ---- INVEST 专用（方案 B 联动，见 bookkeeping-design.md）----
+  holding       Holding? @relation("InvestTarget", fields: [holdingId], references: [id])
+  holdingId     String? // 买入的目标持仓
+  units         Float? // 买入份额 = amount / unitPrice
+  unitPrice     Float? // 买入单价（目标持仓计价货币）
+  cashHolding   Holding? @relation("InvestCash", fields: [cashHoldingId], references: [id])
+  cashHoldingId String? // 扣款的现金持仓，空 = 外部资金
+
+  createdAt  DateTime          @default(now())
+}
+
+// 一次对帐单汇入批次，方便追溯/整批撤销
+model ImportBatch {
+  id           String        @id @default(cuid())
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  fileName     String
+  importedAt   DateTime      @default(now())
+  transactions Transaction[]
+}
+
+// 财务目标
+model Goal {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  name         String
+  targetAmount Float
+  currency     String
+  targetDate   DateTime
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+// 每日净值快照：首页净值折线图（Ghostfolio 式 hero）的数据来源。
+// 一天一条（date 按吉隆坡时区取日历日，存成该日 UTC 零点），
+// 同一天多次刷新行情只 upsert 覆盖，不会重复。
+model PortfolioSnapshot {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  date        DateTime
+  netWorthMYR Float // 总净资产
+  investedMYR Float // 非现金投资部位现值
+  cashMYR     Float // 现金部位
+  costMYR     Float // 总投入成本，算区间收益率用
+  byAssetType String // JSON 序列化的 [{assetType, valueMYR}]，SQLite 没有 JSON 型别
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, date])
+}

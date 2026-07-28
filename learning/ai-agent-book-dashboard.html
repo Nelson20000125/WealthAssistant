@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Agent 学习地图 · 深入理解 AI Agent（李博杰）</title>
+<style>
+  :root{
+    --bg:#0b0c0e; --panel:#131519; --panel2:#1a1d22; --line:#262a31;
+    --txt:#e8eaed; --dim:#9aa2ad; --dimmer:#6b727c;
+    --model:#7c9cff; --ctx:#4dd6a8; --tool:#ffb45c; --accent:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:56px 24px 96px}
+  h1{font-size:30px;font-weight:650;letter-spacing:-.02em;margin:0 0 6px}
+  .sub{color:var(--dim);font-size:14px;margin:0 0 44px}
+  .sub a{color:var(--accent);text-decoration:none}
+  h2{font-size:13px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+     color:var(--dimmer);margin:56px 0 18px}
+
+  /* ── 核心公式 ── */
+  .formula{display:flex;align-items:stretch;gap:12px;flex-wrap:wrap}
+  .term{flex:1;min-width:200px;background:var(--panel);border:1px solid var(--line);
+        border-radius:12px;padding:18px 18px 16px;cursor:pointer;transition:.18s;position:relative}
+  .term:hover{border-color:var(--dimmer);transform:translateY(-2px)}
+  .term.on{border-color:var(--c);box-shadow:0 0 0 1px var(--c)}
+  .term .tag{font-size:11px;letter-spacing:.08em;color:var(--c);font-weight:600}
+  .term .name{font-size:19px;font-weight:600;margin:4px 0 2px}
+  .term .role{font-size:13px;color:var(--dim)}
+  .plus{display:flex;align-items:center;color:var(--dimmer);font-size:22px}
+  .termbody{margin-top:12px;background:var(--panel2);border:1px solid var(--line);
+     border-left:3px solid var(--c);border-radius:8px;padding:14px 16px;font-size:14px;color:var(--dim);display:none}
+  .termbody.on{display:block}
+  .termbody b{color:var(--txt);font-weight:600}
+
+  /* ── 章节网格 ── */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:10px}
+  .ch{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+      padding:13px 14px;cursor:pointer;transition:.15s}
+  .ch:hover{border-color:var(--dimmer);background:var(--panel2)}
+  .ch.on{border-color:var(--accent);background:var(--panel2)}
+  .ch .n{font-size:11px;color:var(--dimmer);font-weight:600}
+  .ch .t{font-size:14.5px;font-weight:600;margin:2px 0 7px}
+  .pills{display:flex;gap:4px}
+  .pill{width:22px;height:3px;border-radius:2px;background:#2b3038}
+  .pill.m{background:var(--model)} .pill.c{background:var(--ctx)} .pill.t{background:var(--tool)}
+
+  .detail{margin-top:14px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:22px 24px;min-height:150px}
+  .detail .dt{font-size:19px;font-weight:650;margin:0 0 2px}
+  .detail .meta{font-size:12px;color:var(--dimmer);margin-bottom:14px}
+  .detail p{margin:0 0 14px;font-size:14.5px;color:var(--dim)}
+  .insight{background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);
+    border-radius:8px;padding:11px 14px;font-size:14px;margin-bottom:14px}
+  .insight span{color:var(--accent);font-weight:600}
+  .labs{display:flex;flex-wrap:wrap;gap:6px}
+  .lab{font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:3px 8px;color:var(--dim)}
+  .wa{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);font-size:13.5px;color:var(--dim)}
+  .wa b{color:#8ee3c0;font-weight:600}
+
+  /* ── 路径 ── */
+  .path{display:flex;flex-direction:column;gap:8px}
+  .step{display:flex;gap:14px;align-items:baseline;background:var(--panel);
+    border:1px solid var(--line);border-radius:9px;padding:12px 16px}
+  .step .lv{font-size:11px;font-weight:700;letter-spacing:.06em;padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .step .d{font-size:14px;color:var(--dim)}
+  .step .d b{color:var(--txt);font-weight:600}
+
+  /* ── 自测 ── */
+  .q{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+     padding:14px 18px;margin-bottom:8px;cursor:pointer}
+  .q .qt{font-size:14.5px;font-weight:550}
+  .q .qa{display:none;font-size:14px;color:var(--dim);margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  .q.on .qa{display:block}
+  .q .hint{font-size:11px;color:var(--dimmer);margin-top:4px}
+  .foot{margin-top:60px;font-size:12.5px;color:var(--dimmer);border-top:1px solid var(--line);padding-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>AI Agent 学习地图</h1>
+  <p class="sub">《深入理解 AI Agent：设计原理与工程实践》· 李博杰 —
+    <a href="https://github.com/bojieli/ai-agent-book" target="_blank">github.com/bojieli/ai-agent-book</a>
+    · 点任何卡片展开</p>
+
+  <h2>一、整本书只有一条公式</h2>
+  <div class="formula" id="formula"></div>
+  <div id="termbodies"></div>
+
+  <h2>二、十章 · 每章在补公式的哪一项</h2>
+  <div class="grid" id="grid"></div>
+  <div class="detail" id="detail">
+    <div class="dt">← 选一章</div>
+    <p>颜色条表示这一章主要在强化「模型／上下文／工具」中的哪一块。先看颜色，再看内容——你会发现十章不是十个话题，是同一个公式的十次放大。</p>
+  </div>
+
+  <h2>三、建议路径（作者版难度分级）</h2>
+  <div class="path" id="path"></div>
+
+  <h2>四、自测：合上页面能答出来才算学会</h2>
+  <div id="quiz"></div>
+
+  <div class="foot">配套代码按 <code>chapterN/项目名/</code> 组织。✅ 可独立运行 · 📖 复现指南（依赖外部仓库）· 🚧 设计文档。
+  API key 推荐：Kimi / 智谱 GLM / SiliconFlow / 火山引擎 / OpenRouter。</div>
+</div>
+
+<script>
+const TERMS=[
+ {k:'model',tag:'MODEL',name:'模型',role:'大脑：理解、推理、决策',c:'var(--model)',
+  body:'<b>能力上限由它决定，但它不是差异化来源。</b>同一个 GPT/Claude 谁都能调。书里第 1 章的说法是「模型即 Agent」——工具调用正在被 RL 内化成模型的原生能力。第 7 章讲怎么用 SFT/RL 后训练把能力真的推上去；第 6 章讲怎么<b>量化</b>它到底强了没有（Terminal-Bench、SWE-bench、GAIA、OSWorld、τ²-bench）。'},
+ {k:'ctx',tag:'CONTEXT',name:'上下文',role:'操作系统：它决定模型能发挥多少',c:'var(--ctx)',
+  body:'完整上下文 = 系统指令 + 对话历史 + 推理过程 + 工具交互记录 + <b>用户记忆</b> + <b>外部知识</b>。第 2 章是「怎么写、怎么压、怎么省」（KV Cache 友好设计、上下文压缩、提示注入防御）；第 3 章是「怎么把外面的东西搬进来」（稠密/稀疏/混合检索、Agentic RAG、结构化知识提取）。<b>90% 的 Agent 效果问题在这一项。</b>'},
+ {k:'tool',tag:'TOOLS',name:'工具',role:'双手：感知环境、执行动作',c:'var(--tool)',
+  body:'第 4 章分三类：<b>感知</b>（读取世界）/<b>执行</b>（改变世界）/<b>协作</b>（叫人或叫别的 Agent），并用 MCP 做标准化接口。设计原则是<b>通用优于专用</b>——给代码解释器，别给计算器。所以第 5 章说代码是「能创造新工具的工具」，是通用 Agent 的元能力。'}];
+
+const CH=[
+ {n:1,t:'Agent 基础',w:['m'],d:'从强化学习里的 Agent 定义出发，对比传统 RL 与 LLM+RL 的样本效率差距，导出核心公式，并提出 Harness 工程：模型之外的一切工程能力，才是真正的竞争力。',
+  i:'先验知识的重要性，超过算法和环境本身。',lab:['learning-from-experience','web-search-agent','search-codegen','context（消融）'],
+  wa:'你的 WealthAssistant 拼不过别人的地方，不会是「用哪个模型」，而是 Harness：数据接口、提示设计、失败兜底。'},
+ {n:2,t:'上下文工程',w:['c'],d:'上下文决定 Agent 的能力上限。大模型 API 的上下文结构、KV Cache 友好设计（把稳定内容放前面，省钱又提速）、提示工程消融、动态提示词与 Agent Skills、状态栏元信息、上下文压缩。',
+  i:'同一个模型，换个上下文写法，效果差距可以大过换模型。',lab:['kv-cache','context-compression','prompt-engineering','system-hint','prompt-injection','agent-skills-ppt'],
+  wa:'把「用户资产快照」这种每次都一样的内容放系统提示最前面 → KV Cache 命中，token 成本直接降。'},
+ {n:3,t:'记忆与知识库',w:['c'],d:'让 Agent 跨会话记住用户，并接入外部知识。用户记忆系统（mem0/memobase 对照）、稠密+稀疏混合检索、Agentic RAG、上下文感知检索、结构化索引与知识图谱。',
+  i:'扁平文本记忆会越堆越糊；结构化索引才能长期扩展。',lab:['user-memory','dense-embedding','sparse-embedding','retrieval-pipeline','agentic-rag','contextual-retrieval','structured-knowledge-extraction'],
+  wa:'这一章跟你最相关。「记住用户的风险偏好和历史决策」不该是塞进提示词的一坨文本，而该是一张有 schema 的表 + 检索。'},
+ {n:4,t:'工具',w:['t'],d:'工具分类与通用设计原则、MCP 协议、工具太多时怎么选（主动工具选择）、感知/执行/协作三类 MCP 服务器、事件触发型与可打断的异步 Agent。',
+  i:'工具设计要通用化：代码解释器优于计算器。',lab:['perception-tools','execution-tools','collaboration-tools','active-tool-selection','async-agent','agent-with-event-trigger'],
+  wa:'Alpha Vantage / CoinGecko 包成 MCP 工具，Agent 就能自己决定何时拉行情，而不是你写死调用顺序。'},
+ {n:5,t:'Coding Agent',w:['t','m'],d:'代码是「能创造新工具的工具」。以一个生产级 Coding Agent 的完整实现为主线，外加一批把代码当思考媒介的应用：用代码提升数学与逻辑能力、NL→SQL 的 ERP Agent、动态表单澄清意图、日志诊断、论文转 PPT/视频。',
+  i:'让模型写代码去算，比让模型心算准得多。',lab:['coding-agent','code-for-math','code-for-logic','erp-agent','dynamic-form','log-diagnosis','conversational-ui'],
+  wa:'erp-agent（自然语言→SQL）几乎就是「问一句：我上季度餐饮花了多少」的现成范式。'},
+ {n:6,t:'评估',w:['m'],d:'把 Agent 表现变成可比较的信号。评估环境与数据集设计、指标体系、统计显著性、可观测性、评估驱动选型，直到生产级内部评估与仿真环境。',
+  i:'独立的验证信号，比「让模型再想一遍」可靠得多。',lab:['terminal-bench','SWE-bench','GAIA','OSWorld','tau2-bench','elo-leaderboard','agent-cost-analysis'],
+  wa:'没有评测集，你永远不知道改提示词是变好还是变坏。先攒 20 条真实问题当私有 benchmark。'},
+ {n:7,t:'模型后训练',w:['m'],d:'预训练 / SFT / RL 三阶段全景：何时选 SFT、何时选 RL、RLHF、算法比较、数据与环境构造，以及让模型把工具调用学成原生能力的前沿探索。',
+  i:'「模型即 Agent」的实现路径，就是用 RL 把工具调用内化进权重。',lab:['AdaptThink','retool','SFTvsRL','verl','Intuitor','continued-pretraining','MiniMind-pretrain'],
+  wa:'专家级章节，个人项目基本用不上。理解「为什么现在的模型会自己调工具」就够了。'},
+ {n:8,t:'自我进化',w:['c','t'],d:'不改权重也能成长。三种学习范式：从经验中学习、把成功工作流外化成新工具、把提示与观察蒸馏回参数；以及主动工具发现、系统提示词自动优化。',
+  i:'从经验中学习，是 Agent 从「聪明」走向「熟练」的关键。',lab:['gaia-experience','browser-use-rpa','prompt-distillation','prompt-auto-optimization','self-evolving-tools'],
+  wa:'每次帮你做完一次资产复盘，把「这次怎么做对的」沉淀成一条规则——这就是自我进化的最小版本。'},
+ {n:9,t:'多模态与实时交互',w:['t'],d:'把感知与行动从文本扩展到语音、GUI 与物理世界。语音三范式（级联 / 端到端全模态 / 全双工）、流式语音感知与可控 TTS、Computer Use 浏览器自动化、电话 Agent。',
+  i:'级联管线延迟高但可控，端到端自然但难调试——这是个工程权衡，不是技术优劣。',lab:['live-audio','browser-use','phone-agent','end-to-end-speech','streaming-speech','controllable-tts'],
+  wa:'browser-use 可以用来抓那些没有 API 的基金净值页面——正好补上你现在手动输入的缺口。'},
+ {n:10,t:'多 Agent 协作',w:['c','t'],d:'多 Agent 分类框架、什么时候真的优于单 Agent、共享上下文与不共享上下文的协作方式、典型失败模式，以及涌现的「Agent 社会」。',
+  i:'多 Agent 的每个设计决策，都能在单 Agent 的三要素里找到对应。',lab:['use-computer-while-calling','multi-role-transfer','book-translation','parallel-web-research','voice-werewolf','staged-system-prompt'],
+  wa:'并行研究多只股票 = parallel-web-research 模式；但先问一句：单 Agent 真的不够吗？'}];
+
+const PATH=[
+ {lv:'入门',ch:'1–2 章',c:'#4dd6a8',d:'<b>基础 + 上下文</b>：建立公式认知，学会写和压上下文。'},
+ {lv:'进阶',ch:'3–4 章',c:'#7c9cff',d:'<b>记忆 + 工具</b>：需要编程基础，涉及检索系统与 MCP 集成。'},
+ {lv:'高级',ch:'5–6 章',c:'#ffb45c',d:'<b>Coding Agent + 评估</b>：复杂系统设计，开始有工程味道。'},
+ {lv:'专家',ch:'7–8 章',c:'#ff7b7b',d:'<b>后训练 + 自我进化</b>：需要深度学习与训练经验，可选。'},
+ {lv:'应用',ch:'9–10 章',c:'#a78bfa',d:'<b>多模态 + 多 Agent</b>：综合前面所有内容，落到真实产品。'}];
+
+const QUIZ=[
+ {q:'不看上面，把核心公式写出来，并说出每一项对应人体的哪个部位。',
+  a:'Agent = 模型 + 上下文 + 工具。模型是大脑（推理决策），上下文是操作系统（它能看到什么），工具是双手（它能做什么）。十章内容全是在填这三个格子。'},
+ {q:'为什么书里说「工具要通用化，代码解释器优于计算器」？',
+  a:'专用工具需要你预判所有需求，工具数量会爆炸，而且模型在一堆工具里选错的概率上升（第 4 章的主动工具选择问题）。代码解释器是一个能<b>组合出</b>无限专用工具的元工具——这也是第 5 章说代码是通用 Agent 元能力的原因。'},
+ {q:'「KV Cache 友好设计」到底在省什么？为什么顺序重要？',
+  a:'省的是重复 prefill 的算力和费用。KV Cache 按前缀匹配复用，只要开头一个 token 变了，后面全部缓存作废。所以稳定内容（系统提示、工具定义）放最前，易变内容（时间戳、最新消息）放最后。'},
+ {q:'你想让 Agent 记住用户的风险偏好。为什么「每次都把历史对话塞进提示词」是错的做法？',
+  a:'三个问题：token 成本线性增长；关键信息被噪声淹没（中间遗忘）；无法跨会话检索。第 3 章的答案是把记忆<b>结构化</b>存储 + 按需检索（Agentic RAG），而不是无差别堆砌。'},
+ {q:'第 6 章说「独立的验证信号比让模型再想一遍更可靠」——为什么？',
+  a:'模型自我反思时用的还是同一套先验和同样的上下文，错误往往会被自我确认而不是被发现。独立信号（跑测试、查数据库、第二个模型、真实环境反馈）引入了模型之外的信息，才可能纠错。'}];
+
+const wrapC={m:'m',c:'c',t:'t'};
+
+// 公式
+document.getElementById('formula').innerHTML = TERMS.map((t,i)=>
+ (i?'<div class="plus">+</div>':'')+
+ `<div class="term" style="--c:${t.c}" data-i="${i}">
+   <div class="tag">${t.tag}</div><div class="name">${t.name}</div><div class="role">${t.role}</div></div>`).join('');
+document.getElementById('termbodies').innerHTML = TERMS.map((t,i)=>
+ `<div class="termbody" style="--c:${t.c}" data-b="${i}">${t.body}</div>`).join('');
+document.querySelectorAll('.term').forEach(el=>el.onclick=()=>{
+  const i=el.dataset.i, was=el.classList.contains('on');
+  document.querySelectorAll('.term').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.termbody').forEach(x=>x.classList.remove('on'));
+  if(!was){el.classList.add('on');document.querySelector(`[data-b="${i}"]`).classList.add('on');}
+});
+
+// 章节
+document.getElementById('grid').innerHTML = CH.map((c,i)=>
+ `<div class="ch" data-i="${i}"><div class="n">第 ${c.n} 章</div><div class="t">${c.t}</div>
+  <div class="pills">${['m','c','t'].map(k=>`<div class="pill ${c.w.includes(k)?wrapC[k]:''}"></div>`).join('')}</div></div>`).join('');
+const names={m:'模型',c:'上下文',t:'工具'};
+const lvlOf=n=>n<=2?'入门级':n<=4?'进阶级':n<=6?'高级':n<=8?'专家级':'应用级';
+document.querySelectorAll('.ch').forEach(el=>el.onclick=()=>{
+  document.querySelectorAll('.ch').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  const c=CH[el.dataset.i];
+  document.getElementById('detail').innerHTML=
+   `<div class="dt">第 ${c.n} 章 · ${c.t}</div>
+    <div class="meta">${lvlOf(c.n)} · 主要强化：${c.w.map(k=>names[k]).join(' + ')}</div>
+    <p>${c.d}</p>
+    <div class="insight"><span>关键洞察 · </span>${c.i}</div>
+    <div class="labs">${c.lab.map(l=>`<div class="lab">${l}</div>`).join('')}</div>
+    <div class="wa"><b>对 WealthAssistant 的意义 · </b>${c.wa}</div>`;
+});
+
+// 路径
+document.getElementById('path').innerHTML = PATH.map(p=>
+ `<div class="step"><div class="lv" style="background:${p.c}22;color:${p.c}">${p.lv} · ${p.ch}</div>
+  <div class="d">${p.d}</div></div>`).join('');
+
+// 自测
+document.getElementById('quiz').innerHTML = QUIZ.map((q,i)=>
+ `<div class="q" data-i="${i}"><div class="qt">${i+1}. ${q.q}</div>
+  <div class="hint">先自己答，再点开</div><div class="qa">${q.a}</div></div>`).join('');
+document.querySelectorAll('.q').forEach(el=>el.onclick=()=>el.classList.toggle('on'));
+</script>
+</body>
+</html>
