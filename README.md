@@ -1,36 +1,101 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WealthAssistant
 
-## Getting Started
+A personal wealth management dashboard with an integrated AI advisor — tracks net
+worth across brokerage, unit trust and bank accounts, imports bank statements, and
+answers questions about your own portfolio.
 
-First, run the development server:
+**[Live demo](https://wealth-assistant-sable.vercel.app)** · `demo@wealthassistant.app` / `@#1122Demo`
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+| Cash flow | AI advisor |
+|---|---|
+| ![Cash flow](docs/screenshots/cashflow.png) | ![AI advisor](docs/screenshots/advisor.png) |
+
+> The demo runs on fictional data. Prices for US tickers are live.
+
+---
+
+## Why I built it
+
+I was tracking my finances across a broker app, a unit trust portal, and a bank app
+— three places, three currencies, no single view of net worth. Existing tools either
+didn't support Malaysian unit trusts or wanted my banking credentials.
+
+So the constraint was: work with whatever data I can export or type in, and be honest
+when a price simply isn't available.
+
+## What it does
+
+| | |
+|---|---|
+| **Portfolio** | Multi-account holdings, allocation breakdown, historical net worth |
+| **Cash flow** | Income/expense tracking, yearly view, keyword-based category rules |
+| **Statement import** | Upload a PDF bank statement → parsed, deduplicated, auto-categorised |
+| **AI advisor** | Chat that can read your actual holdings and record transactions |
+| **Market brief** | Daily S&P 500 news, filtered for relevance to what you hold |
+
+## Engineering notes
+
+The parts I'd want to talk through in an interview:
+
+**Market data that degrades instead of failing.**
+`lib/marketData.ts` is an orchestrator, not a client. Cache (1h for quotes, 12h for
+FX) → primary provider → fallback provider → **stale cache**. If every provider is
+down it returns the last known price flagged `cached: true` rather than throwing. A
+portfolio dashboard that shows nothing is worse than one showing slightly old
+numbers, so provider failure is a display concern, not an exception.
+
+**Some prices don't exist, and the app says so.**
+Malaysian unit trusts have no public quote API. Rather than scrape something fragile,
+those holdings are explicitly manual-entry. Knowing which problems not to automate
+mattered more here than the ones I did.
+
+**Auth split across two runtimes.**
+`auth.config.ts` is Edge-safe and used by middleware; `auth.ts` runs on Node and holds
+the database client. Keeping them separate stops Prisma from being bundled into the
+Edge runtime.
+
+**Multi-tenant from the schema up.**
+Every business model carries `userId` — added as a migration pair
+(`add_user_multitenancy` then `require_user_id`) so existing rows could be backfilled
+before the column became non-nullable. The AI agent's memory is scoped per user
+through Mastra's request context, so one user's conversation can't leak into
+another's.
+
+**Reconciliation over confidence.**
+The statement parser cross-checks its line items against the recorded total. If they
+don't reconcile it falls back to a single correct line instead of showing an itemised
+breakdown that adds up wrong. Wrong numbers in a finance app are worse than fewer
+numbers.
+
+**Migrations against a database that can't run them.**
+Turso speaks libSQL over HTTP, so `prisma migrate` can't touch it — and Prisma's
+table-rebuild migrations rely on `PRAGMA foreign_keys=OFF`, which the HTTP transport
+rejects. `scripts/turso-apply-migration.ts` generates nothing itself: migrations are
+authored locally against SQLite, then replayed remotely through libSQL's `migrate()`
+mode, tracked in a `_turso_applied_migrations` table so reruns are safe.
+
+## Stack
+
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · shadcn/ui
+Prisma 7 · Turso (libSQL) · Auth.js v5
+Mastra agent framework · Vercel AI SDK · Langfuse tracing
+Yahoo Finance · Frankfurter (FX) · Alpha Vantage (fallback)
+
+## Running locally
 
 ```bash
+npm install
+cp .env.example .env.local     # fill in ADMIN_EMAIL, AUTH_SECRET at minimum
+npx prisma migrate dev
+npx tsx prisma/seed.ts         # demo data
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Local development runs against a SQLite file; Turso is only used in deployment. See
+`.env.example` for the full variable list.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Status
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Personal project, actively developed.

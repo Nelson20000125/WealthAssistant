@@ -14,6 +14,7 @@ import { WalletIcon, TrophyIcon, SparkleIcon } from "@/components/icons";
 import Value from "@/components/Value";
 import NetWorthChart, { type History } from "@/components/NetWorthChart";
 import PortfolioSummaryCard from "@/components/PortfolioSummaryCard";
+import RefreshPricesButton from "@/components/RefreshPricesButton";
 
 const ASSET_TYPE_LABEL: Record<string, string> = {
   ETF: "股票/ETF",
@@ -48,6 +49,15 @@ export default async function OverviewPage() {
   const summary = await getPortfolioSummary(userId);
   const health = computePortfolioHealth(summary);
   const displayName = session!.user.name ?? session!.user.email?.split("@")[0];
+
+  // 最近一次抓到报价的时间：取所有持仓 priceAsOf 的最大值，给「更新报价」按钮显示
+  const priceTimes = summary.holdings
+    .map((h) => h.priceAsOf)
+    .filter((d): d is Date => d instanceof Date);
+  const lastPriceAt =
+    priceTimes.length > 0
+      ? new Date(Math.max(...priceTimes.map((d) => d.getTime()))).toISOString()
+      : null;
 
   // 净值历史：Prisma client 还没重新生成（缺 PortfolioSnapshot 模型）时会 throw，
   // 降级成 null 让图表区显示空状态，别把整个总览页拖挂
@@ -98,13 +108,19 @@ export default async function OverviewPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="animate-in" style={{ animationDelay: `${SECTION_DELAY[0]}ms` }}>
-        <div className="text-xs font-medium tracking-widest text-ai-accent uppercase">
-          Investment OS
+      <div
+        className="animate-in flex items-end justify-between gap-4"
+        style={{ animationDelay: `${SECTION_DELAY[0]}ms` }}
+      >
+        <div>
+          <div className="text-xs font-medium tracking-widest text-ai-accent uppercase">
+            Investment OS
+          </div>
+          <h1 className="mt-1 text-3xl font-semibold text-ink">
+            {displayName ? `${greeting()}，${displayName}` : greeting()}
+          </h1>
         </div>
-        <h1 className="mt-1 text-3xl font-semibold text-ink">
-          {displayName ? `${greeting()}，${displayName}` : greeting()}
-        </h1>
+        <RefreshPricesButton lastPriceAt={lastPriceAt} />
       </div>
 
       {/* 今日未记账提醒（与 Cowork 23:00 定时提醒双保险） */}
