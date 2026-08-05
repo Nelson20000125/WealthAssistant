@@ -18,6 +18,25 @@ async function authenticate(formData: FormData) {
   }
 }
 
+/**
+ * 公开 demo 用的一键登入。帐密从环境变数读，不接受任何外部输入 ——
+ * 履历上的链接会被不看 README 的人直接点开，卡在空登入框等于这条路径断掉。
+ */
+async function loginAsDemo() {
+  "use server";
+  const email = process.env.DEMO_EMAIL?.trim().toLowerCase();
+  const password = process.env.DEMO_PASSWORD;
+  if (!email || !password) redirect("/login?error=1");
+  try {
+    await signIn("credentials", { email, password, redirectTo: "/" });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      redirect("/login?error=1");
+    }
+    throw error;
+  }
+}
+
 export default async function LoginPage({
   searchParams,
 }: {
@@ -26,6 +45,10 @@ export default async function LoginPage({
   const { error } = await searchParams;
   const session = await auth();
   if (session) redirect("/");
+
+  // 用独立开关而不是靠 DATABASE_URL 是不是远端来猜：本机跑的是真实财务资料，
+  // 那颗按钮绝对不该在那里出现
+  const demoMode = process.env.DEMO_MODE === "1" && !!process.env.DEMO_EMAIL;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-page px-4">
@@ -70,6 +93,25 @@ export default async function LoginPage({
             登入
           </button>
         </form>
+
+        {demoMode && (
+          <>
+            <div className="my-5 flex items-center gap-3">
+              <span className="h-px flex-1 bg-line" />
+              <span className="text-xs text-ink-muted">或</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            <form action={loginAsDemo}>
+              <button
+                type="submit"
+                className="w-full rounded-md border border-line px-3 py-2 text-sm font-medium text-ink transition-colors hover:border-ink"
+              >
+                以访客身份查看 demo
+              </button>
+            </form>
+            <p className="mt-2 text-center text-xs text-ink-muted">资料为虚构，可随意点选</p>
+          </>
+        )}
       </div>
     </div>
   );
