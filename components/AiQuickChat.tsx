@@ -19,8 +19,10 @@ export default function AiQuickChat() {
 
   if (pathname === "/advisor") return null;
 
+  // 手机隐藏：右下角这颗球的位置正好是底部 tab bar，会互相盖住。
+  // 小屏要用 AI 就走 tab bar 的「顾问」进 /advisor 页，功能不会少。
   return (
-    <>
+    <div className="hidden md:block">
       {!open && (
         <button
           type="button"
@@ -64,6 +66,6 @@ export default function AiQuickChat() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

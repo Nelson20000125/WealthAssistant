@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Geist_Mono, Geist } from "next/font/google";
 import Sidebar from "@/components/Sidebar";
+import MobileNav from "@/components/MobileNav";
 import AiQuickChat from "@/components/AiQuickChat";
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -42,12 +43,15 @@ export default async function RootLayout({
       suppressHydrationWarning
       className={cn("h-full", "antialiased", inter.variable, geistMono.variable, "font-sans", geist.variable)}
     >
-      <body className="min-h-full flex bg-page text-ink">
+      {/* 手机是「顶栏 → 内容 → 底部 tab」的纵向排法，桌面才是「侧栏 ｜ 内容」的横向排法 */}
+      <body className="flex min-h-full flex-col bg-page text-ink md:flex-row">
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         {session ? (
           <>
             <Sidebar userEmail={session.user.email} />
-            <main className="flex-1 px-8 py-8">
+            <MobileNav userEmail={session.user.email} />
+            {/* pb-24 是留给固定在底部的 tab bar 的位置，不然最后一列内容会被盖住 */}
+            <main className="flex-1 px-4 pb-24 pt-6 md:px-8 md:py-8">
               <div className="mx-auto w-full max-w-6xl">{children}</div>
             </main>
             <AiQuickChat />

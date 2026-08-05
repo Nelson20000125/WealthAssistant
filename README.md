@@ -12,7 +12,8 @@ answers questions about your own portfolio.
 |---|---|
 | ![Cash flow](docs/screenshots/cashflow.png) | ![AI advisor](docs/screenshots/advisor.png) |
 
-> The demo runs on fictional data. Prices for US tickers are live.
+> The demo runs on fictional data. Prices for US tickers are live. The AI advisor has a
+> daily message cap so the shared demo key doesn't get drained.
 
 ---
 
@@ -31,9 +32,10 @@ when a price simply isn't available.
 |---|---|
 | **Portfolio** | Multi-account holdings, allocation breakdown, historical net worth |
 | **Cash flow** | Income/expense tracking, yearly view, keyword-based category rules |
-| **Statement import** | Upload a PDF bank statement → parsed, deduplicated, auto-categorised |
+| **Statement import** | Upload a bank statement (PDF or CSV) → parsed, deduplicated, auto-categorised |
 | **AI advisor** | Chat that can read your actual holdings and record transactions |
 | **Market brief** | Daily S&P 500 news, filtered for relevance to what you hold |
+| **Settings** | Manage accounts, categories and the keyword rules that drive auto-categorisation |
 
 ## Engineering notes
 
@@ -62,6 +64,21 @@ Every business model carries `userId` — added as a migration pair
 before the column became non-nullable. The AI agent's memory is scoped per user
 through Mastra's request context, so one user's conversation can't leak into
 another's.
+
+**Two statement formats, one contract.**
+The bank exports PDF and CSV, and neither is pleasant. The PDF has no debit/credit
+column — direction has to be inferred by comparing each running balance against the
+previous row. The CSV declares five columns in its header and then emits nine to
+eleven, because the trailing ones carry the merchant details that categorisation
+actually needs. Both parsers return the same `ParsedStatement` shape, so preview,
+deduplication and import were written once.
+
+**A phone is not a narrow desktop.**
+The holdings table has eight columns. Shrinking it to phone width would leave every
+column illegible, so below the `md` breakpoint it isn't a table at all — each holding
+becomes a card that leads with the two numbers that matter (current value and P&L)
+and demotes the rest. Where a table genuinely is the point, like the year-on-year
+cash flow comparison, it scrolls horizontally instead of being redrawn.
 
 **Reconciliation over confidence.**
 The statement parser cross-checks its line items against the recorded total. If they

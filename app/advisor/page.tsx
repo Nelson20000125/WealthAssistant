@@ -4,6 +4,7 @@ import { getPortfolioSummary } from "@/lib/portfolio";
 import { getMarketBrief } from "@/lib/marketBrief";
 import { computePortfolioHealth, generateInsights, generateSuggestions } from "@/lib/portfolioIntelligence";
 import { matchNewsRelevance } from "@/lib/newsRelevance";
+import { peekAiQuota } from "@/lib/aiUsage";
 import HealthScoreRing from "@/components/HealthScoreRing";
 import PortfolioIntelligencePanel from "@/components/PortfolioIntelligencePanel";
 import { NewsIcon } from "@/components/icons";
@@ -26,7 +27,11 @@ const SECTION_DELAY = [0, 60, 120, 180, 240, 300, 360];
 
 export default async function AdvisorPage() {
   const session = await auth();
-  const [summary, rawNews] = await Promise.all([getPortfolioSummary(session!.user.id), getMarketBrief(8)]);
+  const [summary, rawNews, quota] = await Promise.all([
+    getPortfolioSummary(session!.user.id),
+    getMarketBrief(8),
+    peekAiQuota(session!.user.id),
+  ]);
   const health = computePortfolioHealth(summary);
   const insights = generateInsights(summary, health);
   const suggestions = generateSuggestions(health);
@@ -94,6 +99,7 @@ export default async function AdvisorPage() {
             insights={insights}
             suggestions={suggestions}
             sectionDelays={[SECTION_DELAY[2], SECTION_DELAY[4], SECTION_DELAY[5]]}
+            quota={quota}
           />
         </div>
 

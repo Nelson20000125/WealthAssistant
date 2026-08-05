@@ -122,7 +122,7 @@ function RulesTab({ rules, categories, call, busy }: {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-line">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full text-sm">
           <thead className="bg-surface text-xs text-ink-muted">
             <tr>
@@ -207,7 +207,7 @@ function CategoriesTab({ categories, call, busy }: { categories: Category[]; cal
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-line">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full text-sm">
           <thead className="bg-surface text-xs text-ink-muted">
             <tr>
@@ -282,7 +282,7 @@ function AccountsTab({ accounts, call, busy }: { accounts: Account[]; call: Call
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-line">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full text-sm">
           <thead className="bg-surface text-xs text-ink-muted">
             <tr>

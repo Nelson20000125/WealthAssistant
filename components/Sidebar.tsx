@@ -2,24 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HomeIcon, LayersIcon, NewsIcon, ChatIcon, WalletIcon, SettingsIcon } from "@/components/icons";
+import { NAV_ITEMS } from "@/components/navItems";
 import ThemeToggle from "@/components/ThemeToggle";
 import { logout } from "@/app/actions/auth";
-
-const NAV_ITEMS = [
-  { href: "/", label: "总览", icon: HomeIcon },
-  { href: "/holdings", label: "持仓明细", icon: LayersIcon },
-  { href: "/cashflow", label: "收支记录", icon: WalletIcon },
-  { href: "/market-brief", label: "市场简报", icon: NewsIcon },
-  { href: "/advisor", label: "AI 顾问", icon: ChatIcon },
-  { href: "/settings", label: "设定", icon: SettingsIcon },
-];
 
 export default function Sidebar({ userEmail }: { userEmail?: string | null }) {
   const pathname = usePathname();
 
+  // 手机改用 MobileNav（顶栏 + 底部 tab），这条固定侧栏在小屏会吃掉大半宽度
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-line bg-surface px-4 py-6">
+    <aside className="hidden w-56 shrink-0 flex-col border-r border-line bg-surface px-4 py-6 md:flex">
       <div className="mb-8 flex items-center gap-2.5 px-2">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-surface text-sm font-semibold">
           财

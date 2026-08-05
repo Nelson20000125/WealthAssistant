@@ -18,9 +18,16 @@ const MARKDOWN_CLASSES = `[&_h1]:mt-3 [&_h1]:mb-1.5 [&_h1]:text-base [&_h1]:font
   [&_strong]:font-semibold
   [&_hr]:my-3 [&_hr]:border-line`;
 
-export default function AdvisorChat({ chat }: { chat: ReturnType<typeof useAdvisorChat> }) {
+export default function AdvisorChat({
+  chat,
+  quota,
+}: {
+  chat: ReturnType<typeof useAdvisorChat>;
+  /** 有传才显示用量说明。是进页面当下的快照，不随对话即时更新。 */
+  quota?: { limit: number | null; used: number };
+}) {
   const [input, setInput] = useState("");
-  const { messages, sendMessage, status } = chat;
+  const { messages, sendMessage, status, error } = chat;
 
   const submitText = (text: string) => {
     if (!text.trim() || status === "submitted" || status === "streaming") return;
@@ -74,6 +81,17 @@ export default function AdvisorChat({ chat }: { chat: ReturnType<typeof useAdvis
         </div>
       )}
 
+      {error && (
+        <div
+          className="rounded-md bg-page py-3 pl-4 pr-4 text-sm leading-relaxed text-ink"
+          style={{ borderLeft: "3px solid var(--warning)" }}
+        >
+          {/* 每日限次那种情况，伺服器回的是可以直接给人看的中文句子；
+              其余错误（网路断掉、模型挂了）讯息对使用者没意义，换成一句人话 */}
+          {error.message?.startsWith("今日") ? error.message : "AI 顾问暂时无法回应，稍后再试一次。"}
+        </div>
+      )}
+
       <form
         onSubmit={handleSubmit}
         className="card flex items-center gap-2 py-3 pl-4 pr-2"
@@ -95,6 +113,12 @@ export default function AdvisorChat({ chat }: { chat: ReturnType<typeof useAdvis
           分析
         </button>
       </form>
+
+      {quota?.limit != null && (
+        <div className="text-xs text-ink-muted">
+          公开 demo 每日 {quota.limit} 次对话上限，进站时已用 {quota.used} 次。
+        </div>
+      )}
 
       {messages.length === 0 && (
         <div className="flex flex-wrap gap-2">

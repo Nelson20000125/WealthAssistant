@@ -3,11 +3,22 @@ import { createUIMessageStreamResponse } from "ai";
 import { RequestContext, MASTRA_RESOURCE_ID_KEY, MASTRA_THREAD_ID_KEY } from "@mastra/core/request-context";
 import { auth } from "@/auth";
 import { mastra } from "@/lib/mastra";
+import { consumeAiQuota } from "@/lib/aiUsage";
 
 export async function POST(req: Request) {
   const session = await auth();
   const userId = session!.user.id;
   const body = await req.json();
+
+  // 额度在真正开始串流之前就扣掉。等 agent 跑完再扣的话，
+  // 使用者中途关掉页面就等于白嫖一次 —— 而模型呼叫在那时早就发出去了。
+  const quota = await consumeAiQuota(userId);
+  if (!quota.allowed) {
+    return new Response(
+      `今日的 AI 对话次数已用完（每天 ${quota.limit} 次），明天再来吧。这是公开 demo 的用量上限，避免 API 额度被耗尽。`,
+      { status: 429, headers: { "Content-Type": "text/plain; charset=utf-8" } },
+    );
+  }
 
   // 只挑 messages/trigger/resumeData/runId 这几个安全字段转发给 agent，
   // 不把整个 client body 原样透传——避免恶意 client 在 body 里塞 requestContext/resourceId

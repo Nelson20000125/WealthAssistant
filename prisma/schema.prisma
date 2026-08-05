@@ -52,6 +52,21 @@ model User {
   importBatches ImportBatch[]
   goals         Goal[]
   snapshots     PortfolioSnapshot[]
+  aiUsage       AiUsage[]
+}
+
+// AI 顾问的每日用量。公开 demo 站的帐密写在 README 里，任何人都能登入，
+// 所以对话次数要有上限，否则 API key 会被刷爆、下一个访客只会看到报错。
+model AiUsage {
+  id     String @id @default(cuid())
+  userId String
+  day    String // YYYY-MM-DD，以 Asia/Kuala_Lumpur 计。存字串而非 DateTime，
+  // 是因为「今天」是个日历概念，存成时间点会在时区换算时跨日。
+  count Int @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
 }
 
 // 一个资金来源户口：moomoo 证券户、Public Mutual 基金户、Public Bank 现金户等

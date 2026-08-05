@@ -77,8 +77,13 @@ async function main() {
   }
   console.log(`分类 ${catId.size} 个`);
 
+  // 时间基准一律相对「跑这支脚本的今天」算，不写死日期：
+  // demo 站的现金流页读的是「本月」，日期写死的话一跨月图表就空了。
+  const today = new Date();
+  const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
   // ── 户口与持仓 ──
-  const asOf = new Date("2026-07-01");
+  const asOf = today;
   await prisma.account.create({
     data: {
       userId: user.id,
@@ -129,10 +134,15 @@ async function main() {
     categoryId: string | null; source: "MANUAL" | "STATEMENT_IMPORT";
   }> = [];
 
-  const end = new Date("2026-07-01");
+  const end = thisMonth;
   for (let back = 8; back >= 0; back--) {
     const m = new Date(end.getFullYear(), end.getMonth() - back, 1);
-    const at = (day: number) => new Date(m.getFullYear(), m.getMonth(), day);
+    // 当月尚未到的日子压回今天：既不让 demo 出现未来日期的交易，
+    // 也不至于让月初造访时「本月」整个空掉。
+    const at = (day: number) => {
+      const d = new Date(m.getFullYear(), m.getMonth(), day);
+      return d > today ? today : d;
+    };
 
     txs.push({
       userId: user.id, date: at(25), amount: 5600, currency: "MYR",

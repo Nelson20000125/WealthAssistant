@@ -109,14 +109,14 @@ export default async function OverviewPage() {
   return (
     <div className="flex flex-col gap-8">
       <div
-        className="animate-in flex items-end justify-between gap-4"
+        className="animate-in flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-end sm:gap-4"
         style={{ animationDelay: `${SECTION_DELAY[0]}ms` }}
       >
         <div>
           <div className="text-xs font-medium tracking-widest text-ai-accent uppercase">
             Investment OS
           </div>
-          <h1 className="mt-1 text-3xl font-semibold text-ink">
+          <h1 className="mt-1 text-2xl font-semibold text-ink sm:text-3xl">
             {displayName ? `${greeting()}，${displayName}` : greeting()}
           </h1>
         </div>
@@ -127,17 +127,17 @@ export default async function OverviewPage() {
       {!recordedToday && (
         <Link
           href="/cashflow?add=1"
-          className="card card-interactive animate-in flex items-center justify-between px-5 py-3.5"
+          className="card card-interactive animate-in flex flex-col gap-1 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
           style={{ borderColor: "color-mix(in srgb, var(--portfolio-accent) 45%, var(--line))" }}
         >
           <span className="text-sm text-ink">今天还没记账 · 花了什么、进了什么，顺手记一笔</span>
-          <span className="text-sm font-medium text-portfolio-accent-deep">+ 记一笔</span>
+          <span className="shrink-0 text-sm font-medium text-portfolio-accent-deep">+ 记一笔</span>
         </Link>
       )}
 
       {/* Ghostfolio 式 hero：整块居中的大数字 + 净值曲线 + 区间 chips，
           「我的钱现在有多少、走势如何」一眼看完，其余卡片全部下移 */}
-      <div className="card animate-in px-6 py-8" style={{ animationDelay: `${SECTION_DELAY[1]}ms` }}>
+      <div className="card animate-in px-4 py-6 sm:px-6 sm:py-8" style={{ animationDelay: `${SECTION_DELAY[1]}ms` }}>
         <div className="flex items-center justify-center gap-2 text-sm text-ink-muted">
           <WalletIcon className="h-4 w-4" />
           净资产（MYR）
@@ -146,7 +146,8 @@ export default async function OverviewPage() {
           value={summary.netWorthMYR}
           format="myr"
           durationMs={800}
-          className="mt-2 block text-center text-6xl font-semibold tracking-tight text-ink tabular-nums"
+          // 货币格式里的空格是不换行空格，整串没法断行 —— 小屏只能靠缩字级避免横向溢出
+          className="mt-2 block text-center text-4xl font-semibold tracking-tight text-ink tabular-nums sm:text-6xl"
         />
         <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center text-sm font-medium">
           {summary.performanceByCurrency.map((p) => (

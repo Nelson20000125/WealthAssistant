@@ -280,27 +280,36 @@ export default function CashflowManager({
   function renderRow(t: TxItem) {
     const meta = TYPE_META[t.type];
     return (
-      <div key={t.id} className="flex items-center gap-3 px-4 py-3">
-        {sortBy !== "date" && (
-          <span className="w-12 shrink-0 text-xs text-ink-muted tabular-nums">{t.date.slice(5, 10)}</span>
-        )}
-        <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-xs text-ink-secondary">
-          {t.type === "INVEST" ? (t.holdingLabel ?? "投资") : (t.categoryName ?? "未分类")}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-sm text-ink">
-          {t.description || (t.type === "INVEST" ? `买入 ${t.holdingLabel}` : meta.label)}
-          {t.type === "INVEST" && t.units && (
-            <span className="ml-2 text-xs text-ink-muted tabular-nums">
-              {t.units.toFixed(4)} 份 @ {t.unitPrice}
-            </span>
+      // 手机排成两行（描述一行、金额与操作一行），桌面用 sm:contents 把包裹层摊平，
+      // 版面跟改动前完全一样
+      <div key={t.id} className="flex flex-col gap-1.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:contents">
+          {sortBy !== "date" && (
+            <span className="w-12 shrink-0 text-xs text-ink-muted tabular-nums">{t.date.slice(5, 10)}</span>
           )}
-        </span>
-        <span className={`shrink-0 text-sm font-medium tabular-nums ${meta.cls}`}>
-          {meta.sign}
-          {t.currency === "MYR"
-            ? formatMYR(t.amount)
-            : `${t.currency} ${t.amount.toLocaleString("en-MY", { maximumFractionDigits: 2 })}`}
-        </span>
+          <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-xs text-ink-secondary">
+            {t.type === "INVEST" ? (t.holdingLabel ?? "投资") : (t.categoryName ?? "未分类")}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm text-ink">
+            {t.description || (t.type === "INVEST" ? `买入 ${t.holdingLabel}` : meta.label)}
+            {t.type === "INVEST" && t.units && (
+              <span className="ml-2 hidden text-xs text-ink-muted tabular-nums sm:inline">
+                {t.units.toFixed(4)} 份 @ {t.unitPrice}
+              </span>
+            )}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 sm:contents">
+          {/* 份数在手机挤不进描述那行，挪来第二行；桌面隐藏，由上面那个负责 */}
+          <span className="min-w-0 flex-1 truncate text-xs text-ink-muted tabular-nums sm:hidden">
+            {t.type === "INVEST" && t.units ? `${t.units.toFixed(4)} 份 @ ${t.unitPrice}` : ""}
+          </span>
+          <span className={`shrink-0 text-sm font-medium tabular-nums ${meta.cls}`}>
+            {meta.sign}
+            {t.currency === "MYR"
+              ? formatMYR(t.amount)
+              : `${t.currency} ${t.amount.toLocaleString("en-MY", { maximumFractionDigits: 2 })}`}
+          </span>
         {deletingId === t.id ? (
           <span className="flex shrink-0 items-center gap-2 text-xs">
             <button type="button" onClick={() => setDeletingId(null)} className="text-ink-secondary hover:text-ink">取消</button>
@@ -319,6 +328,7 @@ export default function CashflowManager({
             <button type="button" onClick={() => setDeletingId(t.id)} className="text-ink-secondary hover:text-critical">删除</button>
           </span>
         )}
+        </div>
       </div>
     );
   }

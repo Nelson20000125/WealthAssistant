@@ -18,10 +18,12 @@ export default function PortfolioIntelligencePanel({
   insights,
   suggestions,
   sectionDelays,
+  quota,
 }: {
   insights: Insight[];
   suggestions: Suggestion[];
   sectionDelays: [number, number, number];
+  quota?: { limit: number | null; used: number };
 }) {
   const chat = useAdvisorChat();
   const { sendMessage, status } = chat;
@@ -79,7 +81,7 @@ export default function PortfolioIntelligencePanel({
 
       <div ref={chatSectionRef} className="card animate-in p-6" style={{ animationDelay: `${sectionDelays[2]}ms` }}>
         <div className="mb-5 text-sm font-medium text-ink">向分析师提问</div>
-        <AdvisorChat chat={chat} />
+        <AdvisorChat chat={chat} quota={quota} />
       </div>
     </>
   );

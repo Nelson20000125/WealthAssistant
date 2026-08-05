@@ -105,6 +105,46 @@ export default function HoldingsTable({
     router.refresh();
   };
 
+  // 每列都要算的三个衍生值，表格与手机卡片共用
+  const derive = (h: Holding) => ({
+    pl: h.valueMYR !== null && h.costValueMYR !== null ? h.valueMYR - h.costValueMYR : null,
+    color: ASSET_TYPE_COLOR[h.assetType] ?? "var(--ink-muted)",
+    pct: h.valueMYR !== null && netWorthMYR > 0 ? h.valueMYR / netWorthMYR : 0,
+  });
+
+  // 编辑／删除那组按钮含二次确认状态，表格与卡片两边都要用，抽出来免得写两份
+  const rowActions = (h: Holding) =>
+    deletingId === h.id ? (
+      <div className="flex items-center justify-end gap-2 text-xs">
+        <span className="text-ink-muted">确定删除？</span>
+        <button type="button" onClick={() => setDeletingId(null)} className="text-ink-secondary hover:text-ink">
+          取消
+        </button>
+        <button
+          type="button"
+          disabled={busyDeleteId === h.id}
+          onClick={() => handleDelete(h.id)}
+          style={{ color: "var(--critical)" }}
+          className="font-medium disabled:opacity-50"
+        >
+          {busyDeleteId === h.id ? "删除中…" : "确定"}
+        </button>
+      </div>
+    ) : (
+      <div className="flex items-center justify-end gap-3 text-xs">
+        <button
+          type="button"
+          onClick={() => setModal({ mode: "edit", values: toFormValues(h) })}
+          className="text-ink-secondary hover:text-ink"
+        >
+          编辑
+        </button>
+        <button type="button" onClick={() => setDeletingId(h.id)} className="text-ink-secondary hover:text-ink">
+          删除
+        </button>
+      </div>
+    );
+
   return (
     <>
       <div className="flex justify-end">
@@ -113,7 +153,70 @@ export default function HoldingsTable({
         </Button>
       </div>
 
-      <div className="card overflow-hidden">
+      {/* 手机版：八栏表格在小屏只会被裁掉一半，改成一笔一张卡片 */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {holdings.map((h) => {
+          const { pl, color, pct } = derive(h);
+          return (
+            <div key={h.id} className="card p-4">
+              <div className="flex items-center gap-3">
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                  style={{ background: `color-mix(in srgb, ${color} 16%, transparent)`, color }}
+                >
+                  <AssetIcon assetType={h.assetType} className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm text-ink">{h.name}</div>
+                  <div className="truncate text-xs text-ink-muted">
+                    {ASSET_TYPE_LABEL[h.assetType] ?? h.assetType}
+                    {h.symbol ? ` · ${h.symbol}` : ""} · {h.accountName}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-end justify-between gap-3 border-t border-line pt-3">
+                <div>
+                  <div className="text-xs text-ink-muted">现值 (MYR)</div>
+                  <div className="text-base font-medium tabular-nums text-ink">
+                    {h.valueMYR !== null ? formatMYR(h.valueMYR) : "汇率缺失"}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-ink-muted">损益 (MYR)</div>
+                  <div className="text-sm font-medium">
+                    <Value value={pl} colorizeSign />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-ink-muted">数量</span>
+                  <span className="tabular-nums text-ink-secondary">{h.quantity}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-ink-muted">单价</span>
+                  <span className="truncate tabular-nums text-ink-secondary">
+                    {h.unitPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })} {h.currency}
+                  </span>
+                </div>
+                <div className="col-span-2 flex items-center gap-2">
+                  <span className="text-ink-muted">占比</span>
+                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-page">
+                    <span className="block h-full rounded-full" style={{ width: `${pct * 100}%`, background: color }} />
+                  </span>
+                  <span className="tabular-nums text-ink-secondary">{formatPct(pct)}</span>
+                </div>
+              </div>
+
+              <div className="mt-3 border-t border-line pt-3">{rowActions(h)}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden card overflow-hidden md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs text-ink-muted">
@@ -129,9 +232,7 @@ export default function HoldingsTable({
           </thead>
           <tbody>
             {holdings.map((h) => {
-              const pl = h.valueMYR !== null && h.costValueMYR !== null ? h.valueMYR - h.costValueMYR : null;
-              const color = ASSET_TYPE_COLOR[h.assetType] ?? "var(--ink-muted)";
-              const pct = h.valueMYR !== null && netWorthMYR > 0 ? h.valueMYR / netWorthMYR : 0;
+              const { pl, color, pct } = derive(h);
               return (
                 <tr key={h.id} className="border-b border-line last:border-0 hover:bg-page/60">
                   <td className="px-4 py-3">
@@ -170,46 +271,7 @@ export default function HoldingsTable({
                   <td className="px-4 py-3 text-right font-medium">
                     <Value value={pl} colorizeSign />
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    {deletingId === h.id ? (
-                      <div className="flex items-center justify-end gap-2 text-xs">
-                        <span className="text-ink-muted">确定删除？</span>
-                        <button
-                          type="button"
-                          onClick={() => setDeletingId(null)}
-                          className="text-ink-secondary hover:text-ink"
-                        >
-                          取消
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busyDeleteId === h.id}
-                          onClick={() => handleDelete(h.id)}
-                          style={{ color: "var(--critical)" }}
-                          className="font-medium disabled:opacity-50"
-                        >
-                          {busyDeleteId === h.id ? "删除中…" : "确定"}
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-end gap-3 text-xs">
-                        <button
-                          type="button"
-                          onClick={() => setModal({ mode: "edit", values: toFormValues(h) })}
-                          className="text-ink-secondary hover:text-ink"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeletingId(h.id)}
-                          className="text-ink-secondary hover:text-ink"
-                        >
-                          删除
-                        </button>
-                      </div>
-                    )}
-                  </td>
+                  <td className="px-4 py-3 text-right">{rowActions(h)}</td>
                 </tr>
               );
             })}
