@@ -100,8 +100,8 @@ export default function PdfImportModal({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 border-b border-line px-6 pt-6 pb-4">
-          <div className="text-sm font-medium text-ink">汇入 PDF 对帐单</div>
-          <div className="mt-1 text-xs text-ink-muted">目前支援 Public Bank (PBE) 网银对帐单 / TNG 电子钱包交易记录</div>
+          <div className="text-sm font-medium text-ink">汇入对帐单</div>
+          <div className="mt-1 text-xs text-ink-muted">Public Bank (PBE) 网银对帐单 PDF 或 CSV 汇出档 / TNG 电子钱包交易记录 PDF</div>
         </div>
 
         {stage === "pick" && (
@@ -133,11 +133,15 @@ export default function PdfImportModal({ onClose }: { onClose: () => void }) {
             )}
             <input
               type="file"
-              accept="application/pdf"
+              accept="application/pdf,text/csv,.csv"
               disabled={busy}
               onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
               className="text-sm text-ink"
             />
+            {/* CSV 走副档名分流，跟上面选的 provider 无关，讲清楚免得以为选错 */}
+            <div className="text-xs text-ink-muted">
+              选 .csv 档会自动用 Public Bank CSV 解析，上面的来源选择只影响 PDF。
+            </div>
             {busy && <div className="text-xs text-ink-muted">解析中…</div>}
           </div>
         )}

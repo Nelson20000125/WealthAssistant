@@ -76,13 +76,21 @@ model Holding {
   assetType  AssetType
   symbol     String? // 有报价代号的才填，如 VOO；现金/无代号基金留空
   name       String
-  quantity   Float // 股数/份额；现金类可以直接当金额存这里，quantity=1
-  costBasis  Float // 每单位成本，现金类等于面额
+  quantity   Float // 股数/份额。现金类固定为 1，金额放 costBasis（2026-07-29 统一约定）
+  costBasis  Float // 每单位成本。现金类＝该币种余额本身
   currency   String // 这笔持仓的计价货币
   lastPrice  Float? // 快取的最新报价（每单位），现金类等于 costBasis
   priceAsOf  DateTime?
-  investTransactions Transaction[] @relation("InvestTarget") // 买入这笔持仓的投资记录
-  cashTransactions   Transaction[] @relation("InvestCash") // 从这笔现金持仓扣款的投资记录
+
+  // ---- 现金持仓专用：余额由流水推导，不可手改（决策 2026-07-29）----
+  // 期初余额挂在持仓、不挂在户口，是因为多币种户口（如 Wise）同一个 Account
+  // 底下会有多笔 CASH holding，每个币种一笔，各自有各自的期初与流水。
+  openingBalance     Float? // 期初余额
+  openingBalanceDate DateTime? // 期初日；只有此日之后的流水才计入推导
+
+  investTransactions      Transaction[] @relation("InvestTarget") // 买入这笔持仓的投资记录
+  cashTransactions        Transaction[] @relation("InvestCash") // 动到这笔现金持仓的交易
+  counterCashTransactions Transaction[] @relation("TransferCounterCash") // 转帐/换汇的对手侧
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 }
@@ -150,8 +158,19 @@ model Transaction {
   holdingId     String? // 买入的目标持仓
   units         Float? // 买入份额 = amount / unitPrice
   unitPrice     Float? // 买入单价（目标持仓计价货币）
+
+  // ---- 现金联动（2026-07-29 起适用于所有 type，不再只是 INVEST）----
+  // 指向「这笔钱动的是哪个现金池」。指到 Holding 而不是 Account，是因为多币种
+  // 户口一个 Account 底下有多个币种余额，只指户口无法确定动的是哪一个。
   cashHolding   Holding? @relation("InvestCash", fields: [cashHoldingId], references: [id])
-  cashHoldingId String? // 扣款的现金持仓，空 = 外部资金
+  cashHoldingId String? // 扣款/入帐的现金持仓，空 = 不影响任何现金余额
+
+  // ---- TRANSFER 对手侧 ----
+  // Wise 内部换汇（AUD 池 -> MYR 池）也算 TRANSFER：同一个 Account、不同币种、
+  // 两边金额不相等，所以对手侧金额必须独立存，不能沿用 amount。
+  counterCashHolding   Holding? @relation("TransferCounterCash", fields: [counterCashHoldingId], references: [id])
+  counterCashHoldingId String? // 转入的现金持仓
+  counterAmount        Float? // 转入侧金额；同币种转帐＝amount，换汇则不等
 
   createdAt  DateTime          @default(now())
 }

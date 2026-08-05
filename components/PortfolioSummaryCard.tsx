@@ -31,8 +31,7 @@ export default async function PortfolioSummaryCard({
   netWorthMYR,
   investedMYR,
   cashMYR,
-  plMYR,
-  plPct,
+  performanceByCurrency,
   holdingsCount,
   accountsCount,
 }: {
@@ -40,8 +39,13 @@ export default async function PortfolioSummaryCard({
   netWorthMYR: number;
   investedMYR: number;
   cashMYR: number;
-  plMYR: number;
-  plPct: number;
+  performanceByCurrency: {
+    currency: string;
+    costNative: number;
+    valueNative: number;
+    plNative: number;
+    plPct: number;
+  }[];
   holdingsCount: number;
   accountsCount: number;
 }) {
@@ -80,12 +84,19 @@ export default async function PortfolioSummaryCard({
       <Row label="投入成本">
         <Value value={costMYR} className="text-ink" />
       </Row>
-      <Row label="未实现损益">
-        <span>
-          <Value value={plMYR} colorizeSign />{" "}
-          (<Value value={plPct} kind="percent" colorizeSign />)
-        </span>
-      </Row>
+      {performanceByCurrency.map((p) => (
+        <Row key={p.currency} label={`未实现损益 · ${p.currency}`}>
+          <span>
+            <Value value={p.plNative} currency={p.currency} colorizeSign />{" "}
+            (<Value value={p.plPct} kind="percent" colorizeSign />)
+          </span>
+        </Row>
+      ))}
+      {performanceByCurrency.length === 0 && (
+        <Row label="未实现损益">
+          <span className="text-ink-muted">尚无投资部位</span>
+        </Row>
+      )}
 
       <Divider />
 

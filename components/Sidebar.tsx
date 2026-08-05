@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HomeIcon, LayersIcon, NewsIcon, ChatIcon, WalletIcon } from "@/components/icons";
+import { HomeIcon, LayersIcon, NewsIcon, ChatIcon, WalletIcon, SettingsIcon } from "@/components/icons";
 import ThemeToggle from "@/components/ThemeToggle";
 import { logout } from "@/app/actions/auth";
 
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/cashflow", label: "收支记录", icon: WalletIcon },
   { href: "/market-brief", label: "市场简报", icon: NewsIcon },
   { href: "/advisor", label: "AI 顾问", icon: ChatIcon },
+  { href: "/settings", label: "设定", icon: SettingsIcon },
 ];
 
 export default function Sidebar({ userEmail }: { userEmail?: string | null }) {

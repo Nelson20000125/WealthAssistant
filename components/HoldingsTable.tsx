@@ -39,6 +39,10 @@ type Holding = {
   unitPrice: number;
   valueMYR: number | null;
   costValueMYR: number | null;
+  derivedBalance?: number;
+  isDerivedCash?: boolean;
+  openingBalance?: number | null;
+  openingBalanceDate?: Date | string | null;
 };
 
 const EMPTY_FORM: HoldingFormValues = {
@@ -61,6 +65,16 @@ function toFormValues(h: Holding): HoldingFormValues {
     quantity: String(h.quantity),
     costBasis: String(h.costBasis),
     currency: h.currency,
+    // 只有推导型现金才带这几个，表单靠 openingBalance !== undefined 判断要不要锁
+    ...(h.isDerivedCash
+      ? {
+          openingBalance: h.openingBalance != null ? String(h.openingBalance) : "",
+          openingBalanceDate: h.openingBalanceDate
+            ? new Date(h.openingBalanceDate).toISOString().slice(0, 10)
+            : "",
+          derivedBalance: h.derivedBalance ?? null,
+        }
+      : {}),
   };
 }
 

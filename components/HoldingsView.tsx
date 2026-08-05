@@ -19,6 +19,10 @@ type Holding = {
   unitPrice: number;
   valueMYR: number | null;
   costValueMYR: number | null;
+  derivedBalance?: number;
+  isDerivedCash?: boolean;
+  openingBalance?: number | null;
+  openingBalanceDate?: Date | string | null;
 };
 
 const VIEWS = [

@@ -82,11 +82,13 @@ export default function CashflowManager({
   items,
   categories: initialCategories,
   holdings,
+  accounts,
   autoOpen = false,
 }: {
   items: TxItem[];
   categories: CategoryOption[];
   holdings: HoldingOption[];
+  accounts: { id: string; name: string; currency: string }[];
   autoOpen?: boolean;
 }) {
   const router = useRouter();
@@ -95,10 +97,17 @@ export default function CashflowManager({
   const [newCategory, setNewCategory] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 就地建目标持仓：以前要跳去持仓页建好再回来，中途表单内容全丢。
+  // 而且现金类持仓不能当投资目标，跑去持仓页很容易建错型别再卡一次。
+  const [newHolding, setNewHolding] = useState<{
+    accountId: string; name: string; assetType: string; currency: string;
+  } | null>(null);
+  const [creatingHolding, setCreatingHolding] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [showTransfers, setShowTransfers] = useState(false);
   // 弹窗要 portal 到 document.body，跳出 page.tsx 的 `.animate-in`（transform 动画会让
   // fixed 定位以它为基准而不是 viewport，弹窗会跟着页面滚动跑位）。SSR 阶段没有 document，
   // 用 mounted 挡一帧，避免 hydration mismatch。
@@ -106,6 +115,44 @@ export default function CashflowManager({
   useEffect(() => setMounted(true), []);
 
   const nonCashHoldings = holdings.filter((h) => h.assetType !== "CASH");
+
+  // 就地建持仓。资产类型刻意不提供 CASH：现金持仓会被投资目标下拉过滤掉，
+  // 在这里建一个现金类等于建了一个马上就选不到的东西。
+  async function createHolding() {
+    if (!newHolding || !form) return;
+    setCreatingHolding(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/holdings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: newHolding.accountId,
+          assetType: newHolding.assetType,
+          name: newHolding.name,
+          symbol: null,
+          // 新持仓还没有任何份额与成本：两者都由第一笔 INVEST 记录经 applyInvest 算出来
+          // （newCostBasis = 金额 ÷ 份额 = 买入单价），所以这里给 0 就好。
+          quantity: 0,
+          costBasis: 0,
+          currency: newHolding.currency,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "建立持仓失败");
+      const created = data.holding ?? data;
+      // 刻意不预填单价：单位信托要用成交当天的真实 NAV，
+      // 预填 1 会让人没留意就存下错的份额。
+      setForm({ ...form, holdingId: created.id, unitPrice: "", cashHoldingId: "" });
+      setNewHolding(null);
+      router.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCreatingHolding(false);
+    }
+  }
+
   const cashHoldings = holdings.filter((h) => h.assetType === "CASH");
   const targetHolding = nonCashHoldings.find((h) => h.id === form?.holdingId) ?? null;
   // 扣款现金必须与目标持仓同币种（服务端也会校验，这里先过滤掉选不了的）
@@ -118,8 +165,13 @@ export default function CashflowManager({
     [categories, form?.type]
   );
 
+  // 转帐是自己户口之间的搬运，两侧各记一笔（PBE 转出 + TNG 转入），
+  // 混在流水里看起来像同一笔重复出现。它们对收支净额本来就是零，所以预设隐藏。
+  // 不是直接砍掉：误分类成转帐的记录（例如基金赎回）如果看不见就永远改不回来。
+  const transferCount = useMemo(() => items.filter((t) => t.type === "TRANSFER").length, [items]);
+
   const sortedItems = useMemo(() => {
-    const arr = [...items];
+    const arr = items.filter((t) => showTransfers || t.type !== "TRANSFER");
     arr.sort((a, b) => {
       const cmp =
         sortBy === "date"
@@ -130,7 +182,7 @@ export default function CashflowManager({
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [items, sortBy, sortDir]);
+  }, [items, sortBy, sortDir, showTransfers]);
 
   // 按日期排序时才按日分组显示（原本的呈现方式）；按分类/金额排序时分组没意义，改平铺列表
   const grouped = useMemo(() => {
@@ -293,9 +345,21 @@ export default function CashflowManager({
           >
             {sortDir === "asc" ? "↑" : "↓"}
           </button>
+          {transferCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowTransfers((v) => !v)}
+              className={`rounded-md border border-line px-2 py-1 text-xs transition ${
+                showTransfers ? "text-ink" : "text-ink-muted hover:text-ink-secondary"
+              }`}
+              title="转帐是自己户口之间的搬运，两侧各一笔，对收支净额是零"
+            >
+              {showTransfers ? "隐藏" : "显示"}转帐（{transferCount}）
+            </button>
+          )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowImport(true)}>汇入 PDF 对帐单</Button>
+          <Button variant="outline" onClick={() => setShowImport(true)}>汇入对帐单</Button>
           <Button onClick={() => { setError(null); setForm(emptyForm()); }}>+ 记一笔</Button>
         </div>
       </div>
@@ -417,11 +481,73 @@ export default function CashflowManager({
                       </option>
                     ))}
                   </select>
+
+                  {newHolding ? (
+                    <div className="flex flex-col gap-2 rounded-md border border-line p-3">
+                      <div className="text-xs font-medium text-ink-muted">新持仓</div>
+                      <input
+                        autoFocus
+                        placeholder="名称，例如 EPF 公积金"
+                        value={newHolding.name}
+                        onChange={(e) => setNewHolding({ ...newHolding, name: e.target.value })}
+                        className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+                      />
+                      <div className="flex gap-2">
+                        <select
+                          value={newHolding.accountId}
+                          onChange={(e) => {
+                            const a = accounts.find((x) => x.id === e.target.value);
+                            setNewHolding({ ...newHolding, accountId: e.target.value, currency: a?.currency ?? "MYR" });
+                          }}
+                          className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+                        >
+                          <option value="">选择户口…</option>
+                          {accounts.map((a) => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={newHolding.assetType}
+                          onChange={(e) => setNewHolding({ ...newHolding, assetType: e.target.value })}
+                          className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+                        >
+                          <option value="FUND">基金 / 定存 / 公积金</option>
+                          <option value="STOCK">股票</option>
+                          <option value="ETF">ETF</option>
+                          <option value="CRYPTO">加密货币</option>
+                        </select>
+                      </div>
+                      <p className="text-xs text-ink-muted">
+                        没有「现金」选项 —— 现金持仓不能当投资目标，建了也选不到。
+                        定存、公积金这类请选<strong>基金</strong>。
+                      </p>
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => setNewHolding(null)}
+                          className="text-xs text-ink-secondary hover:text-ink">取消</button>
+                        <button
+                          type="button"
+                          disabled={creatingHolding || !newHolding.name.trim() || !newHolding.accountId}
+                          onClick={createHolding}
+                          className="rounded-md bg-ink px-3 py-1.5 text-xs font-medium text-surface disabled:opacity-50"
+                        >
+                          {creatingHolding ? "建立中…" : "建立并选用"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setNewHolding({ accountId: "", name: "", assetType: "FUND", currency: "MYR" })}
+                      className="self-start text-xs font-medium text-ai-accent hover:opacity-80"
+                    >
+                      + 新增持仓
+                    </button>
+                  )}
                   <div className="flex items-center gap-3">
                     <input
                       type="number"
                       inputMode="decimal"
-                      placeholder="买入单价"
+                      placeholder="买入单价（NAV）"
                       value={form.unitPrice}
                       onChange={(e) => setForm({ ...form, unitPrice: e.target.value })}
                       className="w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
@@ -430,6 +556,11 @@ export default function CashflowManager({
                       <span className="text-xs text-ink-muted tabular-nums">≈ {units.toFixed(4)} 份</span>
                     )}
                   </div>
+                  <p className="text-xs text-ink-muted">
+                    填成交当天的<strong>单位净值 NAV</strong>，份额会自己算。
+                    单位信托的 NAV 通常在 RM 0.2–1.5 之间，去 Public Mutual 网站/App 的交易确认书查。
+                    填错单价，份额和之后的报酬率就跟着错。
+                  </p>
                   <select
                     value={form.cashHoldingId}
                     onChange={(e) => setForm({ ...form, cashHoldingId: e.target.value })}

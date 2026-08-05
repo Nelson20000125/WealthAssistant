@@ -26,11 +26,24 @@ export async function POST() {
     }
   }
 
-  let fx;
-  try {
-    fx = await getFxRate("USD", "MYR");
-  } catch (error) {
-    fx = { error: (error as Error).message };
+  // 汇率：抓「持仓里实际出现过的每一个非 MYR 币种」，不写死 USD。
+  // 写死 USD 的后果是任何其他币种永远拿不到汇率，而缺汇率的持仓会被
+  // getPortfolioSummary 静默排除在净资产之外——数字会安静地少一截。
+  const currencyRows = await prisma.holding.findMany({
+    where: { account: { userId } },
+    select: { currency: true },
+    distinct: ["currency"],
+  });
+  const currencies = currencyRows.map((r) => r.currency).filter((c) => c !== "MYR");
+
+  const fx = [];
+  for (const base of currencies) {
+    try {
+      const { rate, cached } = await getFxRate(base, "MYR");
+      fx.push({ pair: `${base}/MYR`, rate, cached });
+    } catch (error) {
+      fx.push({ pair: `${base}/MYR`, error: (error as Error).message });
+    }
   }
 
   // 价格/汇率刷新后顺手记一笔当日净值快照（净值折线图的数据来源）。
@@ -43,5 +56,5 @@ export async function POST() {
     snapshot = { error: (error as Error).message };
   }
 
-  return NextResponse.json({ prices, fx: { pair: "USD/MYR", ...fx }, snapshot });
+  return NextResponse.json({ prices, fx, snapshot });
 }

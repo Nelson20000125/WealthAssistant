@@ -63,11 +63,15 @@ async function applyInvest(
     if (cash.currency !== holding.currency) {
       throw new Error(`扣款现金（${cash.currency}）与目标持仓（${holding.currency}）币种不一致`);
     }
-    // 现金模型：quantity=1，costBasis=金额。允许扣成负数（透支是真实世界会发生的事）
-    await tx.holding.update({
-      where: { id: cash.id },
-      data: { costBasis: cash.costBasis - input.amount, lastPrice: cash.costBasis - input.amount },
-    });
+    // 有期初余额 = 走流水推导，余额由 getDerivedCashBalances 从这笔交易本身算出来，
+    // 这里再扣一次 costBasis 是多余的：那个栏位已经不被读取，写进去只会慢慢偏离真实值。
+    // 没有期初余额的旧式现金持仓才沿用直接扣款。
+    if (cash.openingBalance === null) {
+      await tx.holding.update({
+        where: { id: cash.id },
+        data: { costBasis: cash.costBasis - input.amount, lastPrice: cash.costBasis - input.amount },
+      });
+    }
   }
 
   return { units, currency: holding.currency };
@@ -93,7 +97,9 @@ async function reverseInvest(
   }
   if (t.cashHoldingId) {
     const cash = await tx.holding.findUnique({ where: { id: t.cashHoldingId } });
-    if (cash) {
+    // 同 applyInvest：推导型现金不碰 costBasis。交易删掉後推导自然就不含它了，
+    // 这里再加回去等于加两次。
+    if (cash && cash.openingBalance === null) {
       await tx.holding.update({
         where: { id: cash.id },
         data: { costBasis: cash.costBasis + t.amount, lastPrice: cash.costBasis + t.amount },

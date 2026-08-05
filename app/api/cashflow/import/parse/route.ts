@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { parsePBEStatement, parseTNGStatement } from "@/lib/pdfStatement";
+import { parsePBECsv } from "@/lib/csvStatement";
 import { matchCategoryByKeyword } from "@/lib/categoryRules";
 import { aiSuggestCategories } from "@/lib/aiCategorize";
 import type { TxType } from "@/lib/transactions";
@@ -19,8 +20,12 @@ export async function POST(request: Request) {
     const password = formData.get("password");
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const parsed =
-      provider === "TNG"
+    // 副档名分流：CSV 走文字解析，PDF 走原本的 pdfjs 流程。
+    // provider 只在 PDF 时有意义（TNG 的 PDF 有密码），CSV 目前只有 PBE 一种格式。
+    const isCsv = file.name.toLowerCase().endsWith(".csv");
+    const parsed = isCsv
+      ? parsePBECsv(buffer)
+      : provider === "TNG"
         ? await parseTNGStatement(buffer, password ? String(password) : undefined)
         : await parsePBEStatement(buffer);
 

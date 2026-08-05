@@ -1,4 +1,4 @@
-import { formatMYR, formatPct } from "@/lib/format";
+import { formatMYR, formatPct, formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type ValueKind = "currency" | "currency-compact" | "percent";
@@ -15,12 +15,15 @@ export type ValueKind = "currency" | "currency-compact" | "percent";
 export default function Value({
   value,
   kind = "currency",
+  currency,
   colorizeSign = false,
   masked = false,
   className,
 }: {
   value: number | null;
   kind?: ValueKind;
+  /** 不给就当 MYR。给了就用原生币种显示（投资表现用）。 */
+  currency?: string;
   colorizeSign?: boolean;
   masked?: boolean;
   className?: string;
@@ -43,6 +46,8 @@ export default function Value({
     text = "••••••";
   } else if (kind === "percent") {
     text = formatPct(value);
+  } else if (currency && currency !== "MYR") {
+    text = formatCurrency(value, currency);
   } else {
     text = formatMYR(value, kind === "currency-compact");
   }

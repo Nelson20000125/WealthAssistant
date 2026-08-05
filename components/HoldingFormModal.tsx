@@ -13,6 +13,10 @@ export type HoldingFormValues = {
   quantity: string;
   costBasis: string;
   currency: string;
+  // 现金专用：余额由流水推导，能改的只有起点
+  openingBalance?: string;
+  openingBalanceDate?: string;
+  derivedBalance?: number | null;
 };
 
 const ASSET_TYPE_OPTIONS = [
@@ -57,6 +61,11 @@ export default function HoldingFormModal({
 
   const update = (patch: Partial<HoldingFormValues>) => setValues((v) => ({ ...v, ...patch }));
 
+  // 推导型现金：余额 = 期初 + 期初日之后的流水。今天的余额是算出来的结果，
+  // 不是可以填的东西 —— 让人改它只会得到「改了没反应」，比不给改更糟。
+  const isDerivedCash =
+    mode === "edit" && values.assetType === "CASH" && values.openingBalance !== undefined;
+
   const handleCreateAccount = async () => {
     setCreatingAccount(true);
     setAccountError(null);
@@ -96,6 +105,14 @@ export default function HoldingFormModal({
       quantity: Number(values.quantity),
       costBasis: Number(values.costBasis),
       currency: values.currency,
+      ...(isDerivedCash
+        ? {
+            openingBalance: Number(values.openingBalance),
+            openingBalanceDate: values.openingBalanceDate
+              ? new Date(values.openingBalanceDate).toISOString()
+              : undefined,
+          }
+        : {}),
     };
 
     const url = mode === "create" ? "/api/holdings" : `/api/holdings/${values.id}`;
@@ -230,6 +247,12 @@ export default function HoldingFormModal({
                 </option>
               ))}
             </select>
+            {values.assetType === "CASH" && (
+              <p className="text-xs text-ink-muted">
+                现金持仓<strong>不能</strong>当投资记录的目标 —— 投资的目标持仓下拉会把现金过滤掉。
+                定存、公积金这类「投进去多少钱」的资产请选<strong>基金</strong>。
+              </p>
+            )}
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
@@ -253,32 +276,76 @@ export default function HoldingFormModal({
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-ink-muted">数量</span>
-              <input
-                required
-                type="number"
-                step="any"
-                min="0"
-                value={values.quantity}
-                onChange={(e) => update({ quantity: e.target.value })}
-                className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-ink-muted">每单位成本</span>
-              <input
-                required
-                type="number"
-                step="any"
-                min="0"
-                value={values.costBasis}
-                onChange={(e) => update({ costBasis: e.target.value })}
-                className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
-              />
-            </label>
-          </div>
+          {isDerivedCash ? (
+            <div className="flex flex-col gap-3 rounded-md border border-line p-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-medium text-ink-muted">目前余额</span>
+                <span className="tabular-nums text-base font-medium text-ink">
+                  {values.derivedBalance != null
+                    ? values.derivedBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    : "—"}{" "}
+                  {values.currency}
+                </span>
+              </div>
+              <p className="text-xs text-ink-muted">
+                这个数字是<strong>算出来的</strong>：期初余额 + 期初日之后的每一笔流水。
+                要改它，请改期初余额，或到「收支记录」补上缺的交易。
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 border-t border-line pt-3">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-ink-muted">期初余额</span>
+                  <input
+                    required
+                    type="number"
+                    step="any"
+                    value={values.openingBalance ?? ""}
+                    onChange={(e) => update({ openingBalance: e.target.value })}
+                    className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-ink-muted">期初日</span>
+                  <input
+                    type="date"
+                    value={values.openingBalanceDate ?? ""}
+                    onChange={(e) => update({ openingBalanceDate: e.target.value })}
+                    className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-ink-muted">
+                期初日<strong>当天及之前</strong>的交易不计入 —— 它们已经在期初余额里了。
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-ink-muted">数量</span>
+                <input
+                  required
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={values.quantity}
+                  onChange={(e) => update({ quantity: e.target.value })}
+                  className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-ink-muted">每单位成本</span>
+                <input
+                  required
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={values.costBasis}
+                  onChange={(e) => update({ costBasis: e.target.value })}
+                  className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
+                />
+              </label>
+            </div>
+          )}
 
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-ink-muted">计价货币</span>

@@ -21,6 +21,17 @@ export function formatMYR(value: number, compact = false) {
   }).format(value);
 }
 
+// 任意币种。投资表现按原生货币显示（决策 2026-07-29：汇率变动不算报酬），
+// 所以需要一个不假设 MYR 的格式化函数。compact 分支刻意不做——
+// 原生金额要看得清小数，而且 formatCompactMYR 的 "RM" 是写死的。
+export function formatCurrency(value: number, currency: string) {
+  return new Intl.NumberFormat("en-MY", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 export function formatPct(value: number) {
   return new Intl.NumberFormat("en-MY", {
     style: "percent",

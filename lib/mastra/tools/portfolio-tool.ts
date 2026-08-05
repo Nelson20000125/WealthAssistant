@@ -5,13 +5,22 @@ import { getPortfolioSummary } from "@/lib/portfolio";
 export const portfolioTool = createTool({
   id: "get-portfolio-summary",
   description:
-    "读取用户当前的资产持仓总览：净资产、成本、未实现损益、资产配置比例、每笔持仓明细（含币种、数量、现价、是否缺汇率）。金额单位是 MYR。",
+    "读取用户当前的资产持仓总览：净资产（MYR）、成本、按币种分列的投资表现、资产配置比例、每笔持仓明细（含币种、数量、现价、是否缺汇率）。" +
+    "重要：投资报酬只按币种原生计算（performanceByCurrency），不要把不同币种的损益相加，也不要把它们换算成 MYR 后再算百分比——" +
+    "用户的口径是汇率变动不计入投资报酬。净资产 netWorthMYR 则是按今日汇率换算的，回答「我有多少钱」时才用它。",
   inputSchema: z.object({}),
   outputSchema: z.object({
     netWorthMYR: z.number(),
     costMYR: z.number(),
-    unrealizedPLMYR: z.number(),
-    unrealizedPLPct: z.number(),
+    performanceByCurrency: z.array(
+      z.object({
+        currency: z.string(),
+        costNative: z.number(),
+        valueNative: z.number(),
+        plNative: z.number(),
+        plPct: z.number(),
+      })
+    ),
     allocation: z.array(
       z.object({
         assetType: z.string(),

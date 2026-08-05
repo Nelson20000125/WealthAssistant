@@ -36,7 +36,7 @@ export default async function CashflowPage({
   const year = Number(yStr);
   const month = Number(mStr);
 
-  const [cashflow, yearData, categories, holdings] = await Promise.all([
+  const [cashflow, yearData, categories, holdings, accounts] = await Promise.all([
     getMonthCashflow(userId, year, month),
     getYearCashflow(userId, year),
     listCategories(userId),
@@ -51,6 +51,12 @@ export default async function CashflowPage({
         lastPrice: true,
         costBasis: true,
       },
+      orderBy: { name: "asc" },
+    }),
+    // 投资表单要能就地建目标持仓，不然使用者得跳去持仓页再回来
+    prisma.account.findMany({
+      where: { userId },
+      select: { id: true, name: true, currency: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -173,6 +179,7 @@ export default async function CashflowPage({
           items={cashflow.items.map((t) => ({ ...t, date: t.date.toISOString() }))}
           categories={categories}
           holdings={holdings}
+          accounts={accounts}
           autoOpen={params.add === "1"}
         />
       </div>

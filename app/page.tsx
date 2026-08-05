@@ -148,9 +148,14 @@ export default async function OverviewPage() {
           durationMs={800}
           className="mt-2 block text-center text-6xl font-semibold tracking-tight text-ink tabular-nums"
         />
-        <div className="mt-2 text-center text-sm font-medium">
-          <Value value={summary.unrealizedPLMYR} colorizeSign />{" "}
-          (<Value value={summary.unrealizedPLPct} kind="percent" colorizeSign />) 未实现损益
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center text-sm font-medium">
+          {summary.performanceByCurrency.map((p) => (
+            <span key={p.currency}>
+              <Value value={p.plNative} currency={p.currency} colorizeSign />{" "}
+              (<Value value={p.plPct} kind="percent" colorizeSign />)
+              <span className="ml-1 text-ink-muted">{p.currency} 未实现损益</span>
+            </span>
+          ))}
         </div>
 
         <NetWorthChart initial={history} />
@@ -215,8 +220,7 @@ export default async function OverviewPage() {
               netWorthMYR={summary.netWorthMYR}
               investedMYR={portfolioValueMYR}
               cashMYR={cashValueMYR}
-              plMYR={summary.unrealizedPLMYR}
-              plPct={summary.unrealizedPLPct}
+              performanceByCurrency={summary.performanceByCurrency}
               holdingsCount={summary.holdings.length}
               accountsCount={summary.allocationByAccount.length}
             />
