@@ -18,11 +18,6 @@ export default function MobileNav({ userEmail }: { userEmail?: string | null }) 
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  // 切页后把抽屉收起来，否则点完连结回到新页面抽屉还开著挡住内容
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
   // 抽屉开著时锁住背景捲动，不然滑动会穿透到底下的页面
   useEffect(() => {
     if (!open) return;
@@ -82,6 +77,8 @@ export default function MobileNav({ userEmail }: { userEmail?: string | null }) 
                   <Link
                     key={item.href}
                     href={item.href}
+                    // 点了就收起来，否则跳到新页面抽屉还开著挡住内容
+                    onClick={() => setOpen(false)}
                     className={`flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors ${
                       active ? "bg-ink font-medium text-surface" : "text-ink-secondary hover:bg-page hover:text-ink"
                     }`}
@@ -95,6 +92,7 @@ export default function MobileNav({ userEmail }: { userEmail?: string | null }) 
 
             <Link
               href="/cashflow?add=1"
+              onClick={() => setOpen(false)}
               className="mt-4 flex items-center justify-center gap-1.5 rounded-md bg-portfolio-accent px-3 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
             >
               + 记一笔
