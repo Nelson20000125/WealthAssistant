@@ -25,9 +25,22 @@ export type TxItem = {
   units: number | null;
   unitPrice: number | null;
   cashHoldingId: string | null;
+  counterCashHoldingId: string | null;
+  counterAmount: number | null;
+  reimbursable: number | null;
+  settlesTransactionId: string | null;
 };
 
-export type CategoryOption = { id: string; name: string; type: string };
+/** 待收回的垫付，给「这笔还款在冲销哪一笔」的下拉用 */
+export type OutstandingOption = {
+  id: string;
+  date: Date;
+  description: string;
+  currency: string;
+  outstanding: number;
+};
+
+export type CategoryOption = { id: string; name: string; type: string; usageCount?: number };
 export type HoldingOption = {
   id: string;
   name: string;
@@ -45,6 +58,42 @@ const TYPE_META = {
   TRANSFER: { label: "转帐", sign: "⇄", cls: "text-ai-accent" },
 } as const;
 
+/**
+ * 户口下拉的文案。以前这里叫「现金池」——那是内部资料模型的名字，
+ * 使用者脑子里想的是「我用哪张卡/哪个钱包付的」，两者对不上，
+ * 结果就是大家一路用预设的「不指定」，记了一整个月余额纹丝不动。
+ *
+ * 所以：改叫户口、给每种类型各自的问法，并且预设会带上次用过的那个。
+ */
+const CASH_POOL_META = {
+  INCOME: {
+    label: "钱进了哪个户口",
+    none: "收现金（没进任何户口）",
+    hint: "选了这个户口的余额才会增加。金额币种跟着所选户口走。",
+  },
+  EXPENSE: {
+    label: "用哪个户口付的",
+    none: "付现金（不从户口扣）",
+    hint: "选了这个户口的余额才会减少。金额币种跟着所选户口走。",
+  },
+  INVEST: {
+    label: "从哪个户口扣款",
+    none: "不从户口扣款（外部资金）",
+    hint: "扣款户口必须与目标持仓同币种。",
+  },
+  TRANSFER: {
+    label: "从哪个户口转出",
+    none: "转出侧不在系统里",
+    hint: "转出与转入都选好，这笔就只是钱换个地方放，不会被算成收入或支出。",
+  },
+} as const;
+
+/** 记住上次用的户口，下次记账直接预选 —— 日常记账九成都是同一张卡 */
+const LAST_POOL_KEY = "wa-last-cash-pool";
+
+/** 分类药丸先只露出这么多个，其余收进「更多」 */
+const CATEGORY_PREVIEW_COUNT = 8;
+
 type SortBy = "date" | "category" | "amount";
 type SortDir = "asc" | "desc";
 
@@ -58,6 +107,16 @@ type FormState = {
   holdingId: string;
   unitPrice: string;
   cashHoldingId: string;
+  /** TRANSFER：钱转进哪个户口 */
+  counterCashHoldingId: string;
+  /** TRANSFER：转入侧金额。跨币种时两边不相等，必须分开填 */
+  counterAmount: string;
+  /** EXPENSE：这笔里垫付给别人的金额 */
+  reimbursable: string;
+  /** 均分人数。只存在于表单，算完写进 reimbursable 就没它的事了 */
+  splitCount: string;
+  /** INCOME：这笔还款在冲销哪一笔垫付 */
+  settlesTransactionId: string;
 };
 
 function todayStr() {
@@ -75,7 +134,46 @@ function emptyForm(type: FormState["type"] = "EXPENSE"): FormState {
     holdingId: "",
     unitPrice: "",
     cashHoldingId: "",
+    counterCashHoldingId: "",
+    counterAmount: "",
+    reimbursable: "",
+    splitCount: "",
+    settlesTransactionId: "",
   };
+}
+
+/**
+ * 空表单 + 预先选好的户口：优先上次用过的那个，只有一个户口时直接用它。
+ *
+ * 「不指定户口」以前是预设值，代价是记的帐完全不影响余额，而且没有任何提示。
+ * localStorage 在服务端读不到，所以有 window 判断；这不会造成 hydration 不一致 ——
+ * 弹窗本身被 mounted 挡着，SSR 阶段根本不输出。
+ */
+function newFormWithPool(
+  type: FormState["type"],
+  cashHoldings: HoldingOption[],
+  defaultCashHoldingId: string | null
+): FormState {
+  const base = emptyForm(type);
+  if (type === "INVEST" || cashHoldings.length === 0) return base;
+
+  let remembered: string | null = null;
+  if (typeof window !== "undefined") {
+    try {
+      remembered = window.localStorage.getItem(LAST_POOL_KEY);
+    } catch {
+      // 隐私模式之类读不到 storage，退回「没有预设」就好
+      remembered = null;
+    }
+  }
+  const preset =
+    cashHoldings.find((h) => h.id === remembered) ??
+    (cashHoldings.length === 1 ? cashHoldings[0] : null) ??
+    // 全新使用者还没有 localStorage 记忆，而户口有好几个 —— 以前这里落到「不指定」，
+    // 记出来的帐不影响余额推导。改成服务端算好的主力户口（余额最大的那个）。
+    cashHoldings.find((h) => h.id === defaultCashHoldingId) ??
+    null;
+  return preset ? { ...base, cashHoldingId: preset.id } : base;
 }
 
 export default function CashflowManager({
@@ -83,16 +181,26 @@ export default function CashflowManager({
   categories: initialCategories,
   holdings,
   accounts,
+  outstanding = [],
   autoOpen = false,
+  defaultCashHoldingId = null,
 }: {
   items: TxItem[];
   categories: CategoryOption[];
   holdings: HoldingOption[];
   accounts: { id: string; name: string; currency: string }[];
+  outstanding?: OutstandingOption[];
   autoOpen?: boolean;
+  /** 还没有 localStorage 记忆时预选哪个户口（服务端按余额算好的主力户口） */
+  defaultCashHoldingId?: string | null;
 }) {
   const router = useRouter();
-  const [form, setForm] = useState<FormState | null>(autoOpen ? emptyForm() : null);
+  // 首页「+ 记一笔」带 ?add=1 进来时直接开好表单，且走跟手动开表单同一套户口预设
+  const [form, setForm] = useState<FormState | null>(() =>
+    autoOpen
+      ? newFormWithPool("EXPENSE", holdings.filter((h) => h.assetType === "CASH"), defaultCashHoldingId)
+      : null
+  );
   const [categories, setCategories] = useState(initialCategories);
   const [newCategory, setNewCategory] = useState("");
   const [busy, setBusy] = useState(false);
@@ -154,16 +262,35 @@ export default function CashflowManager({
   }
 
   const cashHoldings = holdings.filter((h) => h.assetType === "CASH");
+
+  function openNew(type: FormState["type"] = "EXPENSE") {
+    setError(null);
+    setForm(newFormWithPool(type, cashHoldings, defaultCashHoldingId));
+  }
+
   const targetHolding = nonCashHoldings.find((h) => h.id === form?.holdingId) ?? null;
   // 扣款现金必须与目标持仓同币种（服务端也会校验，这里先过滤掉选不了的）
   const eligibleCash = targetHolding
     ? cashHoldings.filter((h) => h.currency === targetHolding.currency)
     : cashHoldings;
 
+  // 按用过的次数排，常用的排前面。以前按名字排，结果最高频的「餐饮」在 21 个药丸的最末位，
+  // 记一顿午餐得先扫完整面墙。次数相同的仍按名字排，顺序才稳定（不会每次开表单跳动）。
   const typeCategories = useMemo(
-    () => categories.filter((c) => c.type === form?.type),
+    () =>
+      categories
+        .filter((c) => c.type === form?.type)
+        .slice()
+        .sort((a, b) => (b.usageCount ?? 0) - (a.usageCount ?? 0) || a.name.localeCompare(b.name, "en")),
     [categories, form?.type]
   );
+
+  // 只先露出常用的那几个，其余收起来 —— 展开是一次点击，扫描 21 个药丸是每次都要付的成本
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const visibleCategories = showAllCategories
+    ? typeCategories
+    : typeCategories.slice(0, CATEGORY_PREVIEW_COUNT);
+  const hiddenCategoryCount = typeCategories.length - visibleCategories.length;
 
   // 转帐是自己户口之间的搬运，两侧各记一笔（PBE 转出 + TNG 转入），
   // 混在流水里看起来像同一笔重复出现。它们对收支净额本来就是零，所以预设隐藏。
@@ -207,6 +334,12 @@ export default function CashflowManager({
       holdingId: t.holdingId ?? "",
       unitPrice: t.unitPrice ? String(t.unitPrice) : "",
       cashHoldingId: t.cashHoldingId ?? "",
+      counterCashHoldingId: t.counterCashHoldingId ?? "",
+      counterAmount: t.counterAmount ? String(t.counterAmount) : "",
+      reimbursable: t.reimbursable ? String(t.reimbursable) : "",
+      // 人数只是算垫付额的输入法，算完就没意义了，编辑时不回推
+      splitCount: "",
+      settlesTransactionId: t.settlesTransactionId ?? "",
     });
   }
 
@@ -241,7 +374,14 @@ export default function CashflowManager({
         description: form.description,
         holdingId: form.type === "INVEST" ? form.holdingId || null : null,
         unitPrice: form.type === "INVEST" ? Number(form.unitPrice) || null : null,
-        cashHoldingId: form.type === "INVEST" ? form.cashHoldingId || null : null,
+        cashHoldingId: form.cashHoldingId || null,
+        counterCashHoldingId:
+          form.type === "TRANSFER" ? form.counterCashHoldingId || null : null,
+        counterAmount:
+          form.type === "TRANSFER" ? Number(form.counterAmount) || null : null,
+        reimbursable: form.type === "EXPENSE" ? Number(form.reimbursable) || null : null,
+        settlesTransactionId:
+          form.type === "INCOME" ? form.settlesTransactionId || null : null,
       };
       const res = await fetch(form.id ? `/api/transactions/${form.id}` : "/api/transactions", {
         method: form.id ? "PATCH" : "POST",
@@ -251,6 +391,14 @@ export default function CashflowManager({
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error ?? "保存失败");
+      }
+      // 记住这次用的户口，下一笔直接预选
+      if (form.cashHoldingId) {
+        try {
+          window.localStorage.setItem(LAST_POOL_KEY, form.cashHoldingId);
+        } catch {
+          // 隐私模式之类读不到 storage，预选没了而已，不该挡住记账
+        }
       }
       setForm(null);
       router.refresh();
@@ -277,6 +425,22 @@ export default function CashflowManager({
       ? Number(form.amount) / Number(form.unitPrice)
       : null;
 
+  // 填了垫付额之后，「所以我自己到底花了多少」要当场看得见 —— 那才是会进支出统计的数
+  const myShare =
+    form && form.type === "EXPENSE" && Number(form.amount) > 0 && Number(form.reimbursable) > 0
+      ? Number(form.amount) - Number(form.reimbursable)
+      : null;
+
+  // 金额栏的币种跟着所选户口走（服务端 resolveCashPool 就是这么定的）。
+  // 以前这里写死「金额（MYR）」，选了澳币户口填 50 会被存成 50 澳币，没有任何提示。
+  const selectedPool = cashHoldings.find((h) => h.id === form?.cashHoldingId) ?? null;
+  const amountCurrency = selectedPool?.currency ?? "MYR";
+  const counterPool = cashHoldings.find((h) => h.id === form?.counterCashHoldingId) ?? null;
+  // 跨币种转帐两侧金额本来就不相等，转入金额必填，否则余额会被原样加错币种
+  const crossCurrencyTransfer =
+    form?.type === "TRANSFER" && counterPool !== null && counterPool.currency !== amountCurrency;
+  const missingCounterAmount = crossCurrencyTransfer && !(Number(form?.counterAmount) > 0);
+
   function renderRow(t: TxItem) {
     const meta = TYPE_META[t.type];
     return (
@@ -285,7 +449,7 @@ export default function CashflowManager({
       <div key={t.id} className="flex flex-col gap-1.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex min-w-0 items-center gap-2 sm:contents">
           {sortBy !== "date" && (
-            <span className="w-12 shrink-0 text-xs text-ink-muted tabular-nums">{t.date.slice(5, 10)}</span>
+            <span className="w-12 shrink-0 text-xs text-ink-muted font-mono tabular-nums">{t.date.slice(5, 10)}</span>
           )}
           <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-xs text-ink-secondary">
             {t.type === "INVEST" ? (t.holdingLabel ?? "投资") : (t.categoryName ?? "未分类")}
@@ -293,7 +457,7 @@ export default function CashflowManager({
           <span className="min-w-0 flex-1 truncate text-sm text-ink">
             {t.description || (t.type === "INVEST" ? `买入 ${t.holdingLabel}` : meta.label)}
             {t.type === "INVEST" && t.units && (
-              <span className="ml-2 hidden text-xs text-ink-muted tabular-nums sm:inline">
+              <span className="ml-2 hidden text-xs text-ink-muted font-mono tabular-nums sm:inline">
                 {t.units.toFixed(4)} 份 @ {t.unitPrice}
               </span>
             )}
@@ -301,10 +465,10 @@ export default function CashflowManager({
         </div>
         <div className="flex items-center gap-3 sm:contents">
           {/* 份数在手机挤不进描述那行，挪来第二行；桌面隐藏，由上面那个负责 */}
-          <span className="min-w-0 flex-1 truncate text-xs text-ink-muted tabular-nums sm:hidden">
+          <span className="min-w-0 flex-1 truncate text-xs text-ink-muted font-mono tabular-nums sm:hidden">
             {t.type === "INVEST" && t.units ? `${t.units.toFixed(4)} 份 @ ${t.unitPrice}` : ""}
           </span>
-          <span className={`shrink-0 text-sm font-medium tabular-nums ${meta.cls}`}>
+          <span className={`shrink-0 text-sm font-medium font-mono tabular-nums ${meta.cls}`}>
             {meta.sign}
             {t.currency === "MYR"
               ? formatMYR(t.amount)
@@ -370,7 +534,7 @@ export default function CashflowManager({
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowImport(true)}>汇入对帐单</Button>
-          <Button onClick={() => { setError(null); setForm(emptyForm()); }}>+ 记一笔</Button>
+          <Button onClick={() => openNew()}>+ 记一笔</Button>
         </div>
       </div>
 
@@ -423,7 +587,13 @@ export default function CashflowManager({
                 <input
                   type="number"
                   inputMode="decimal"
-                  placeholder={form.type === "INVEST" ? "金额（持仓币种）" : "金额（MYR）"}
+                  placeholder={
+                    form.type === "INVEST"
+                      ? "金额（持仓币种）"
+                      : form.type === "TRANSFER"
+                        ? `转出金额（${amountCurrency}）`
+                        : `金额（${amountCurrency}）`
+                  }
                   value={form.amount}
                   onChange={(e) => setForm({ ...form, amount: e.target.value })}
                   className="w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
@@ -440,7 +610,7 @@ export default function CashflowManager({
               {form.type !== "INVEST" ? (
                 <>
                   <div className="flex flex-wrap gap-1.5">
-                    {typeCategories.map((c) => (
+                    {visibleCategories.map((c) => (
                       <button
                         key={c.id}
                         type="button"
@@ -454,6 +624,24 @@ export default function CashflowManager({
                         {c.name}
                       </button>
                     ))}
+                    {hiddenCategoryCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllCategories(true)}
+                        className="rounded-full border border-dashed border-line px-3 py-1 text-xs text-ink-muted hover:text-ink"
+                      >
+                        更多 {hiddenCategoryCount} 个
+                      </button>
+                    )}
+                    {showAllCategories && typeCategories.length > CATEGORY_PREVIEW_COUNT && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllCategories(false)}
+                        className="rounded-full px-3 py-1 text-xs text-ink-muted hover:text-ink"
+                      >
+                        收起
+                      </button>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <input
@@ -563,7 +751,7 @@ export default function CashflowManager({
                       className="w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
                     />
                     {units !== null && (
-                      <span className="text-xs text-ink-muted tabular-nums">≈ {units.toFixed(4)} 份</span>
+                      <span className="text-xs text-ink-muted font-mono tabular-nums">≈ {units.toFixed(4)} 份</span>
                     )}
                   </div>
                   <p className="text-xs text-ink-muted">
@@ -571,19 +759,161 @@ export default function CashflowManager({
                     单位信托的 NAV 通常在 RM 0.2–1.5 之间，去 Public Mutual 网站/App 的交易确认书查。
                     填错单价，份额和之后的报酬率就跟着错。
                   </p>
+                </>
+              )}
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-ink">
+                  {CASH_POOL_META[form.type].label}
+                </label>
+                <select
+                  value={form.cashHoldingId}
+                  onChange={(e) => setForm({ ...form, cashHoldingId: e.target.value })}
+                  className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+                >
+                  <option value="">{CASH_POOL_META[form.type].none}</option>
+                  {eligibleCash.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}（{h.currency}）
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-ink-muted">{CASH_POOL_META[form.type].hint}</p>
+                {/* 没选户口 = 这笔不影响任何余额。以前这是预设值且毫无提示，
+                    使用者记满一个月才发现余额没动过 */}
+                {!form.cashHoldingId && form.type !== "INVEST" && cashHoldings.length > 0 && (
+                  <p className="text-xs text-warning">
+                    没选户口的话，这笔只进收支统计，任何余额都不会变动。
+                  </p>
+                )}
+                {cashHoldings.length === 0 && (
+                  <p className="text-xs text-warning">
+                    还没有任何户口余额 —— 到本页上方的「现金余额」建一个，记账才能带动余额。
+                  </p>
+                )}
+              </div>
+
+              {form.type === "TRANSFER" && (
+                <div className="flex flex-col gap-2 rounded-md border border-line p-3">
+                  <label className="text-xs font-medium text-ink">钱转进哪个户口</label>
                   <select
-                    value={form.cashHoldingId}
-                    onChange={(e) => setForm({ ...form, cashHoldingId: e.target.value })}
+                    value={form.counterCashHoldingId}
+                    onChange={(e) =>
+                      setForm({ ...form, counterCashHoldingId: e.target.value, counterAmount: "" })
+                    }
                     className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
                   >
-                    <option value="">不从现金持仓扣款（外部资金）</option>
-                    {eligibleCash.map((h) => (
-                      <option key={h.id} value={h.id}>
-                        {h.name}（{formatMYR(h.costBasis)}）
+                    <option value="">转入侧不在系统里（余额只扣不加）</option>
+                    {cashHoldings
+                      .filter((h) => h.id !== form.cashHoldingId)
+                      .map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.name}（{h.currency}）
+                        </option>
+                      ))}
+                  </select>
+
+                  {counterPool && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        placeholder={`转入金额（${counterPool.currency}）${crossCurrencyTransfer ? "" : "，同币种可留空"}`}
+                        value={form.counterAmount}
+                        onChange={(e) => setForm({ ...form, counterAmount: e.target.value })}
+                        className="w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+                      />
+                    </div>
+                  )}
+                  {crossCurrencyTransfer && (
+                    <p className="text-xs text-warning">
+                      转出 {amountCurrency}、转入 {counterPool!.currency} —— 两边金额不相等，
+                      转入侧实际到帐多少要照实填（系统不会替你换算）。
+                    </p>
+                  )}
+                  <p className="text-xs text-ink-muted">
+                    两侧都选好，这笔钱只是换个地方放：转出户口扣、转入户口加，
+                    收入和支出统计都不会动到。
+                  </p>
+                </div>
+              )}
+
+              {/* 垫付是进阶用法，日常记账九成用不到，但它以前一直摊开着占掉表单三分之一。
+                  收进 details，编辑一笔已经填了垫付的记录时自动展开，否则找不到它在哪。 */}
+              {form.type === "EXPENSE" && (
+                <details
+                  open={Number(form.reimbursable) > 0}
+                  className="flex flex-col gap-2 rounded-md border border-line p-3"
+                >
+                  <summary className="cursor-pointer list-none text-xs font-medium text-ink-secondary hover:text-ink">
+                    垫付了别人的钱？（选填）
+                  </summary>
+                  <div className="mt-2 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="其中垫付"
+                      value={form.reimbursable}
+                      onChange={(e) =>
+                        setForm({ ...form, reimbursable: e.target.value, splitCount: "" })
+                      }
+                      className="w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+                    />
+                    <span className="shrink-0 text-xs text-ink-muted">或均分</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="人数"
+                      value={form.splitCount}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        const total = Number(form.amount);
+                        // 均分只是「帮你算出垫付额」的输入法：n 个人分总额，
+                        // 自己那份留下，其余都是垫出去的
+                        const share = n > 1 && total > 0 ? (total * (n - 1)) / n : null;
+                        setForm({
+                          ...form,
+                          splitCount: e.target.value,
+                          reimbursable: share !== null ? share.toFixed(2) : form.reimbursable,
+                        });
+                      }}
+                      className="w-16 shrink-0 rounded-md border border-line bg-surface px-2 py-2 text-sm text-ink"
+                    />
+                    <span className="shrink-0 text-xs text-ink-muted">人</span>
+                  </div>
+                  {myShare !== null && (
+                    <p className="text-xs text-ink-muted font-mono tabular-nums">
+                      我自己那份 <strong className="text-ink">{myShare.toFixed(2)}</strong>
+                      　待收回 {Number(form.reimbursable).toFixed(2)}
+                    </p>
+                  )}
+                  <p className="text-xs text-ink-muted">
+                    垫出去的钱不算你的支出（它只是变成了别人欠你的），但现金余额照样扣全额。
+                  </p>
+                  </div>
+                </details>
+              )}
+
+              {form.type === "INCOME" && outstanding.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <select
+                    value={form.settlesTransactionId}
+                    onChange={(e) => setForm({ ...form, settlesTransactionId: e.target.value })}
+                    className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+                  >
+                    <option value="">不是还款（这是真的收入）</option>
+                    {outstanding.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {new Date(o.date).toISOString().slice(0, 10)}　{o.description || "（无备注）"}
+                        　还差 {o.outstanding.toFixed(2)} {o.currency}
                       </option>
                     ))}
                   </select>
-                </>
+                  <p className="text-xs text-ink-muted">
+                    选了的话这笔不算收入 —— 它只是把之前垫出去的钱收回来。现金余额照常增加。
+                  </p>
+                </div>
               )}
 
               <input
@@ -600,8 +930,8 @@ export default function CashflowManager({
               {error && <div className="mb-3 text-sm text-critical">{error}</div>}
               <div className="flex justify-end gap-2">
                 <Button variant="outline" disabled={busy} onClick={() => setForm(null)}>取消</Button>
-                <Button disabled={busy || !form.amount} onClick={submit}>
-                  {busy ? "保存中…" : "保存"}
+                <Button disabled={busy || !form.amount || missingCounterAmount} onClick={submit}>
+                  {busy ? "保存中…" : missingCounterAmount ? "请填转入金额" : "保存"}
                 </Button>
               </div>
             </div>

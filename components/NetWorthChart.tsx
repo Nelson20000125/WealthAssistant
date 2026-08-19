@@ -80,7 +80,7 @@ export default function NetWorthChart({ initial }: { initial: History | null }) 
         {hasChart && paths ? (
           <>
             {hover && (
-              <div className="pointer-events-none absolute -top-1 left-0 right-0 text-center text-xs text-ink-secondary tabular-nums">
+              <div className="pointer-events-none absolute -top-1 left-0 right-0 text-center text-xs text-ink-secondary font-mono tabular-nums">
                 {hover.date.slice(0, 10)} · {formatMYR(hover.netWorthMYR)}
               </div>
             )}

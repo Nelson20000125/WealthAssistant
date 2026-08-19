@@ -50,6 +50,10 @@ export default function YearlyCashflowTable({
             const isMax = m.expense > 0 && m.expense === maxExpense;
             const isCurrent = m.month === currentMonth;
             const isEmpty = m.income === 0 && m.expense === 0 && m.invest === 0;
+            // 结余 = 收入 − 支出，跟投资无关。没有任何收支记录的月份，那个差是
+            // 「没记账」而不是「刚好持平」—— 显示 RM 0.00 会被读成后者。
+            // 这台机器上 7 月就是这种情况：有真实的投资回填，但收支从 8 月才开始记。
+            const noBookkeeping = m.income === 0 && m.expense === 0;
             return (
               <tr
                 key={m.month}
@@ -71,7 +75,7 @@ export default function YearlyCashflowTable({
                   {m.invest > 0 ? <Value value={m.invest} className="text-portfolio-accent-deep" /> : <span className="text-ink-muted">—</span>}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  {isEmpty ? <span className="text-ink-muted">—</span> : <Value value={m.net} colorizeSign />}
+                  {noBookkeeping ? <span className="text-ink-muted">—</span> : <Value value={m.net} colorizeSign />}
                 </td>
                 <td className="px-3 py-2 text-right text-xs text-ink-secondary">
                   {m.topExpenseCategory ?? "—"}

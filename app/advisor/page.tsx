@@ -12,7 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import NewsCard from "@/components/NewsCard";
 
 const LIVE_RESEARCH_TILE = { label: "组合分析", href: "/" };
-const UPCOMING_RESEARCH_TILES = ["个股分析", "行业分析", "股息分析", "风险分析", "资本配置分析"];
+// 只留最近要做的两项。原本列了五项「开发中」，配一项能用的，比例 1:5 ——
+// 灰掉的比能用的多三倍，整块读起来像半成品，反而削弱了那唯一能用的功能。
+const UPCOMING_RESEARCH_TILES = ["个股分析", "股息分析"];
 
 function subScoreColor(score: number) {
   if (score >= 70) return "var(--good)";
@@ -63,7 +65,7 @@ export default async function AdvisorPage() {
                 <div>
                   <div className="text-xs text-ink-muted">风险</div>
                   <div
-                    className="mt-1 text-xl font-semibold tabular-nums"
+                    className="mt-1 text-xl font-semibold font-mono tabular-nums"
                     style={{ color: subScoreColor(health.riskScore) }}
                   >
                     {health.riskScore}
@@ -72,7 +74,7 @@ export default async function AdvisorPage() {
                 <div>
                   <div className="text-xs text-ink-muted">分散度</div>
                   <div
-                    className="mt-1 text-xl font-semibold tabular-nums"
+                    className="mt-1 text-xl font-semibold font-mono tabular-nums"
                     style={{ color: subScoreColor(health.diversificationScore) }}
                   >
                     {health.diversificationScore}
@@ -81,7 +83,7 @@ export default async function AdvisorPage() {
                 <div>
                   <div className="text-xs text-ink-muted">现金配置</div>
                   <div
-                    className="mt-1 text-xl font-semibold tabular-nums"
+                    className="mt-1 text-xl font-semibold font-mono tabular-nums"
                     style={{ color: subScoreColor(health.cashAllocationScore) }}
                   >
                     {health.cashAllocationScore}

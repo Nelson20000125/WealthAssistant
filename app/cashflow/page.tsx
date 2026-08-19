@@ -1,22 +1,34 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getMonthCashflow, getYearCashflow, listCategories } from "@/lib/transactions";
+import {
+  getMonthCashflow,
+  getYearCashflow,
+  listCategories,
+  listOutstandingReimbursements,
+} from "@/lib/transactions";
 import { formatMYR } from "@/lib/format";
 import Value from "@/components/Value";
 import DonutChart from "@/components/DonutChart";
 import CashflowManager from "@/components/CashflowManager";
+import CashBalanceCards from "@/components/CashBalanceCards";
+import OutstandingReimbursements from "@/components/OutstandingReimbursements";
+import { getCashPools, pickDefaultCashPool } from "@/lib/cashBalance";
 import IncomeExpenseChart from "@/components/IncomeExpenseChart";
 import YearlyCashflowTable from "@/components/YearlyCashflowTable";
 
-// 支出分类圆环的颜色轮换（分类数量不定，固定色序循环）
+// 支出分类圆环的颜色轮换（分类数量不定，固定色序循环）。
+// 原本第 5、6 位是 --critical 与 --ink-muted：前者让「旅游」这种中性分类被画成亏损红，
+// 后者让一个分类看起来像被停用。分类色一律从 series 取。
 const DONUT_COLORS = [
   "var(--series-1)",
   "var(--series-2)",
   "var(--series-3)",
   "var(--series-4)",
-  "var(--critical)",
-  "var(--ink-muted)",
+  "var(--series-5)",
+  "var(--series-6)",
+  "var(--series-7)",
+  "var(--series-8)",
 ];
 
 function monthKey(y: number, m: number) {
@@ -36,7 +48,7 @@ export default async function CashflowPage({
   const year = Number(yStr);
   const month = Number(mStr);
 
-  const [cashflow, yearData, categories, holdings, accounts] = await Promise.all([
+  const [cashflow, yearData, categories, holdings, accounts, cashPools, outstanding] = await Promise.all([
     getMonthCashflow(userId, year, month),
     getYearCashflow(userId, year),
     listCategories(userId),
@@ -56,10 +68,19 @@ export default async function CashflowPage({
     // 投资表单要能就地建目标持仓，不然使用者得跳去持仓页再回来
     prisma.account.findMany({
       where: { userId },
-      select: { id: true, name: true, currency: true },
+      // type / institution 是现金池编辑表单要的（HoldingFormModal 的 Account 形状）
+      select: { id: true, name: true, currency: true, type: true, institution: true },
       orderBy: { name: "asc" },
     }),
+    getCashPools(userId),
+    listOutstandingReimbursements(userId),
   ]);
+
+  // 有实际数据的月份数。少于 3 个月就不画年度对比图 ——
+  // 12 个月的横轴配一两根柱子看起来像坏了，而下面的年度表格已经把同样的数说清楚。
+  const monthsWithData = yearData.months.filter(
+    (m) => m.income !== 0 || m.expense !== 0 || m.invest !== 0
+  ).length;
 
   const prev = month === 1 ? monthKey(year - 1, 12) : monthKey(year, month - 1);
   const next = month === 12 ? monthKey(year + 1, 1) : monthKey(year, month + 1);
@@ -94,6 +115,13 @@ export default async function CashflowPage({
         <h1 className="mt-1 text-3xl font-semibold text-ink">收支记录</h1>
       </div>
 
+      {/* 现金余额放在月份汇总之前：余额是「当下有多少」，与所选月份无关；
+          下面那张卡才是「这个月流进流出多少」 */}
+      <CashBalanceCards pools={cashPools} accounts={accounts} />
+
+      {/* 紧跟在余额后面：垫出去的钱不在余额里、也不在支出里，这是它唯一的落脚处 */}
+      <OutstandingReimbursements items={outstanding} />
+
       {/* 月份切换 + 四格汇总 */}
       <div className="card animate-in p-6">
         <div className="flex items-center justify-between">
@@ -107,7 +135,7 @@ export default async function CashflowPage({
           {stats.map((s) => (
             <div key={s.label} className="text-center">
               <div className="text-xs text-ink-muted">{s.label}</div>
-              <div className={`mt-1 text-lg font-medium tabular-nums ${s.cls}`}>{formatMYR(s.value, true)}</div>
+              <div className={`mt-1 text-lg font-medium font-mono tabular-nums ${s.cls}`}>{formatMYR(s.value, true)}</div>
             </div>
           ))}
           <div className="text-center">
@@ -146,12 +174,27 @@ export default async function CashflowPage({
         <div className="animate-in">
           <div className="card p-6">
             <div className="mb-5 text-sm font-medium text-ink">本月收入分类</div>
-            {incomeDonutSegments.length > 0 ? (
+            {incomeDonutSegments.length > 1 ? (
               <DonutChart
                 segments={incomeDonutSegments}
                 centerLabel="收入"
                 centerValue={formatMYR(cashflow.totals.income, true)}
               />
+            ) : incomeDonutSegments.length === 1 ? (
+              // 只有一个分类时不画圆环 —— 一个 100% 的完整圆环不携带任何信息，
+              // 却占掉整整半个面板。退化成一行，把空间还给页面。
+              <div className="flex items-baseline justify-between">
+                <span className="flex items-center gap-2 text-sm text-ink">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ background: incomeDonutSegments[0].color }}
+                  />
+                  {incomeDonutSegments[0].label}
+                </span>
+                <span className="font-mono text-sm text-ink tabular-nums">
+                  {formatMYR(cashflow.totals.income)}
+                </span>
+              </div>
             ) : (
               <div className="flex h-32 items-center justify-center text-sm text-ink-muted">
                 本月还没有收入记录
@@ -163,7 +206,7 @@ export default async function CashflowPage({
 
       <div className="card animate-in p-6">
         <div className="mb-5 text-sm font-medium text-ink">{year} 年收支对比</div>
-        <IncomeExpenseChart months={yearData.months} />
+        {monthsWithData >= 3 && <IncomeExpenseChart months={yearData.months} />}
         <div className="mt-6 border-t border-line pt-5">
           <YearlyCashflowTable
             months={yearData.months}
@@ -180,7 +223,9 @@ export default async function CashflowPage({
           categories={categories}
           holdings={holdings}
           accounts={accounts}
+          outstanding={outstanding}
           autoOpen={params.add === "1"}
+          defaultCashHoldingId={pickDefaultCashPool(cashPools)}
         />
       </div>
     </div>

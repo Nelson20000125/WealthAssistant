@@ -165,12 +165,12 @@ export default function PdfImportModal({ onClose }: { onClose: () => void }) {
             <div className="flex flex-col divide-y divide-line">
               {rows.map((r, i) => (
                 <div key={i} className="flex items-center gap-3 py-2.5">
-                  <span className="w-12 shrink-0 text-xs text-ink-muted tabular-nums">{r.date.slice(5, 10)}</span>
+                  <span className="w-12 shrink-0 text-xs text-ink-muted font-mono tabular-nums">{r.date.slice(5, 10)}</span>
                   <span className="min-w-0 flex-1 truncate text-xs text-ink-secondary" title={r.description}>
                     {r.description}
                   </span>
                   <span
-                    className={`shrink-0 text-sm font-medium tabular-nums ${r.direction === "CREDIT" ? "text-good" : "text-ink"}`}
+                    className={`shrink-0 text-sm font-medium font-mono tabular-nums ${r.direction === "CREDIT" ? "text-good" : "text-ink"}`}
                   >
                     {r.direction === "CREDIT" ? "+" : "−"}
                     {formatMYR(r.amount)}

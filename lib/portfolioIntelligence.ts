@@ -1,5 +1,5 @@
 import type { getPortfolioSummary } from "@/lib/portfolio";
-import { formatPct } from "@/lib/format";
+import { formatShare } from "@/lib/format";
 
 type PortfolioSummary = Awaited<ReturnType<typeof getPortfolioSummary>>;
 
@@ -109,19 +109,19 @@ export function generateInsights(summary: PortfolioSummary, health: PortfolioHea
     insights.push({
       tone: "flag",
       category: "现金配置",
-      text: `现金占比 ${formatPct(health.cashPct)}，明显高于稳健型组合的常见区间（10%–30%），资金效率偏低。`,
+      text: `现金占比 ${formatShare(health.cashPct)}，明显高于稳健型组合的常见区间（10%–30%），资金效率偏低。`,
     });
   } else if (health.cashAllocationScore >= 85) {
     insights.push({
       tone: "healthy",
       category: "现金配置",
-      text: `现金占比 ${formatPct(health.cashPct)}，落在稳健区间内，流动性和成长性算是平衡。`,
+      text: `现金占比 ${formatShare(health.cashPct)}，落在稳健区间内，流动性和成长性算是平衡。`,
     });
   } else {
     insights.push({
       tone: "neutral",
       category: "现金配置",
-      text: `现金占比 ${formatPct(health.cashPct)}，接近合理区间，可以再观察。`,
+      text: `现金占比 ${formatShare(health.cashPct)}，接近合理区间，可以再观察。`,
     });
   }
 

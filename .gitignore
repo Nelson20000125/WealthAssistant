@@ -62,6 +62,18 @@ _tmp_*.js
 prisma/seed.local.ts
 scripts/seed-category-rules.local.ts
 
+# 一次性资料脚本：针对真实帐目做回填/修正/诊断，配对与金额是写死在档案里的。
+# 用前缀而不是逐档列 —— 每做一次资料回填就会新增一支，逐档列迟早漏掉一支，
+# 而这个 repo 是公开的，漏一支就是把真实财务数字推上去。
+#
+# 这三个前缀一律拦截，包含未来新增的。已经追踪中的档案不受影响
+# （gitignore 不管已追踪档，如 scripts/backfill-snapshot.ts 照常在版本库里）。
+# 新写的同前缀脚本若确定不含真实数字、想进版本库，用 git add -f 明确加入。
+scripts/backfill-*
+scripts/fix-*
+scripts/inspect-*
+scripts/*.local.*
+
 # 本地 AI 协作设定，不进公开作品集
 .claude/
 CLAUDE.md

@@ -54,7 +54,7 @@ export default function HoldingsRanking({ holdings }: { holdings: Holding[] }) {
                     {h.symbol ? h.symbol : ASSET_TYPE_LABEL[h.assetType] ?? h.assetType}
                   </span>
                 </div>
-                <div className="shrink-0 text-sm font-medium text-ink tabular-nums">
+                <div className="shrink-0 text-sm font-medium text-ink font-mono tabular-nums">
                   {formatMYR(value)}
                 </div>
               </div>

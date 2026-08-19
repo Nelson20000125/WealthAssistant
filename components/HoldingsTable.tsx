@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatMYR, formatPct } from "@/lib/format";
+import { formatMYR, formatShare, formatQuantity } from "@/lib/format";
 import { AssetIcon } from "@/components/icons";
 import HoldingFormModal, { type HoldingFormValues } from "@/components/HoldingFormModal";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ type Holding = {
   accountId: string;
   accountName: string;
   assetType: string;
+  valuation: string;
   symbol: string | null;
   name: string;
   quantity: number;
@@ -39,6 +40,8 @@ type Holding = {
   unitPrice: number;
   valueMYR: number | null;
   costValueMYR: number | null;
+  /** 手动估值型但一笔价都没填过 —— 盈亏恒为 0，要标出来而不是冒充持平 */
+  needsValuation?: boolean;
   derivedBalance?: number;
   isDerivedCash?: boolean;
   openingBalance?: number | null;
@@ -48,6 +51,7 @@ type Holding = {
 const EMPTY_FORM: HoldingFormValues = {
   accountId: "",
   assetType: "STOCK",
+  valuation: "AUTO",
   name: "",
   symbol: "",
   quantity: "",
@@ -55,36 +59,29 @@ const EMPTY_FORM: HoldingFormValues = {
   currency: "",
 };
 
+// 现金不出现在这张表里（归收支页管），所以不需要期初余额那组栏位
 function toFormValues(h: Holding): HoldingFormValues {
   return {
     id: h.id,
     accountId: h.accountId,
     assetType: h.assetType,
+    valuation: h.valuation,
     name: h.name,
     symbol: h.symbol ?? "",
     quantity: String(h.quantity),
     costBasis: String(h.costBasis),
     currency: h.currency,
-    // 只有推导型现金才带这几个，表单靠 openingBalance !== undefined 判断要不要锁
-    ...(h.isDerivedCash
-      ? {
-          openingBalance: h.openingBalance != null ? String(h.openingBalance) : "",
-          openingBalanceDate: h.openingBalanceDate
-            ? new Date(h.openingBalanceDate).toISOString().slice(0, 10)
-            : "",
-          derivedBalance: h.derivedBalance ?? null,
-        }
-      : {}),
   };
 }
 
 export default function HoldingsTable({
   holdings,
-  netWorthMYR,
+  totalMYR,
   accounts,
 }: {
   holdings: Holding[];
-  netWorthMYR: number;
+  /** 占比的分母：投资总额（不含现金） */
+  totalMYR: number;
   accounts: Account[];
 }) {
   const router = useRouter();
@@ -105,11 +102,30 @@ export default function HoldingsTable({
     router.refresh();
   };
 
+  // 按资产类型分组，组之间按总值降序。用 label 当 key 而不是 assetType ——
+  // STOCK 与 ETF 显示同一个名字，分成两组会让人以为自己重复建了持仓。
+  const groups = useMemo(() => {
+    const map = new Map<string, Holding[]>();
+    for (const h of holdings) {
+      const key = ASSET_TYPE_LABEL[h.assetType] ?? h.assetType;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(h);
+    }
+    return Array.from(map.entries())
+      .map(([label, items]) => ({
+        label,
+        assetType: items[0].assetType,
+        items: [...items].sort((a, b) => (b.valueMYR ?? 0) - (a.valueMYR ?? 0)),
+        totalMYR: items.reduce((sum, h) => sum + (h.valueMYR ?? 0), 0),
+      }))
+      .sort((a, b) => b.totalMYR - a.totalMYR);
+  }, [holdings]);
+
   // 每列都要算的三个衍生值，表格与手机卡片共用
   const derive = (h: Holding) => ({
     pl: h.valueMYR !== null && h.costValueMYR !== null ? h.valueMYR - h.costValueMYR : null,
     color: ASSET_TYPE_COLOR[h.assetType] ?? "var(--ink-muted)",
-    pct: h.valueMYR !== null && netWorthMYR > 0 ? h.valueMYR / netWorthMYR : 0,
+    pct: h.valueMYR !== null && totalMYR > 0 ? h.valueMYR / totalMYR : 0,
   });
 
   // 编辑／删除那组按钮含二次确认状态，表格与卡片两边都要用，抽出来免得写两份
@@ -155,7 +171,15 @@ export default function HoldingsTable({
 
       {/* 手机版：八栏表格在小屏只会被裁掉一半，改成一笔一张卡片 */}
       <div className="flex flex-col gap-3 md:hidden">
-        {holdings.map((h) => {
+        {groups.map((g) => (
+          <Fragment key={g.label}>
+            <div className="flex items-center gap-2 px-1 pt-2 text-xs font-medium text-ink-secondary">
+              <AssetIcon assetType={g.assetType} className="h-3.5 w-3.5" />
+              {g.label}
+              <span className="font-normal text-ink-muted">{g.items.length} 笔</span>
+              <span className="ml-auto font-mono tabular-nums">{formatMYR(g.totalMYR)}</span>
+            </div>
+            {g.items.map((h) => {
           const { pl, color, pct } = derive(h);
           return (
             <div key={h.id} className="card p-4">
@@ -178,14 +202,18 @@ export default function HoldingsTable({
               <div className="mt-3 flex items-end justify-between gap-3 border-t border-line pt-3">
                 <div>
                   <div className="text-xs text-ink-muted">现值 (MYR)</div>
-                  <div className="text-base font-medium tabular-nums text-ink">
+                  <div className="text-base font-medium font-mono tabular-nums text-ink">
                     {h.valueMYR !== null ? formatMYR(h.valueMYR) : "汇率缺失"}
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-xs text-ink-muted">损益 (MYR)</div>
                   <div className="text-sm font-medium">
-                    <Value value={pl} colorizeSign />
+                    {h.needsValuation ? (
+                      <span className="text-warning">尚未估值</span>
+                    ) : (
+                      <Value value={pl} colorizeSign />
+                    )}
                   </div>
                 </div>
               </div>
@@ -193,11 +221,11 @@ export default function HoldingsTable({
               <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-ink-muted">数量</span>
-                  <span className="tabular-nums text-ink-secondary">{h.quantity}</span>
+                  <span className="font-mono tabular-nums text-ink-secondary">{formatQuantity(h.quantity)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-ink-muted">单价</span>
-                  <span className="truncate tabular-nums text-ink-secondary">
+                  <span className="truncate font-mono tabular-nums text-ink-secondary">
                     {h.unitPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })} {h.currency}
                   </span>
                 </div>
@@ -206,14 +234,16 @@ export default function HoldingsTable({
                   <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-page">
                     <span className="block h-full rounded-full" style={{ width: `${pct * 100}%`, background: color }} />
                   </span>
-                  <span className="tabular-nums text-ink-secondary">{formatPct(pct)}</span>
+                  <span className="font-mono tabular-nums text-ink-secondary">{formatShare(pct)}</span>
                 </div>
               </div>
 
               <div className="mt-3 border-t border-line pt-3">{rowActions(h)}</div>
             </div>
           );
-        })}
+            })}
+          </Fragment>
+        ))}
       </div>
 
       <div className="hidden card overflow-hidden md:block">
@@ -231,10 +261,25 @@ export default function HoldingsTable({
             </tr>
           </thead>
           <tbody>
-            {holdings.map((h) => {
+            {groups.map((g) => (
+              <Fragment key={g.label}>
+                <tr className="border-b border-line bg-page/40">
+                  <td colSpan={5} className="px-4 py-2">
+                    <div className="flex items-center gap-2 text-xs font-medium text-ink-secondary">
+                      <AssetIcon assetType={g.assetType} className="h-3.5 w-3.5" />
+                      {g.label}
+                      <span className="font-normal text-ink-muted">{g.items.length} 笔</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2 text-right text-xs font-medium font-mono tabular-nums text-ink-secondary">
+                    {formatMYR(g.totalMYR)}
+                  </td>
+                  <td colSpan={2} />
+                </tr>
+                {g.items.map((h) => {
               const { pl, color, pct } = derive(h);
               return (
-                <tr key={h.id} className="border-b border-line last:border-0 hover:bg-page/60">
+                <tr key={h.id} className="border-b border-line hover:bg-page/60">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <span
@@ -253,8 +298,8 @@ export default function HoldingsTable({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-ink-secondary">{h.accountName}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-ink-secondary">{h.quantity}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-ink-secondary">
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-ink-secondary">{formatQuantity(h.quantity)}</td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-ink-secondary">
                     {h.unitPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })} {h.currency}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -262,19 +307,25 @@ export default function HoldingsTable({
                       <span className="h-1.5 w-14 overflow-hidden rounded-full bg-page">
                         <span className="block h-full rounded-full" style={{ width: `${pct * 100}%`, background: color }} />
                       </span>
-                      <span className="w-10 tabular-nums text-ink-secondary">{formatPct(pct)}</span>
+                      <span className="w-10 font-mono tabular-nums text-ink-secondary">{formatShare(pct)}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-ink">
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-ink">
                     {h.valueMYR !== null ? formatMYR(h.valueMYR) : "汇率缺失"}
                   </td>
                   <td className="px-4 py-3 text-right font-medium">
-                    <Value value={pl} colorizeSign />
+                    {h.needsValuation ? (
+                      <span className="text-warning">尚未估值</span>
+                    ) : (
+                      <Value value={pl} colorizeSign />
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">{rowActions(h)}</td>
                 </tr>
               );
-            })}
+                })}
+              </Fragment>
+            ))}
           </tbody>
         </table>
       </div>

@@ -18,6 +18,10 @@ function parseInput(body: Record<string, unknown>): TransactionInput {
     holdingId: body.holdingId ? String(body.holdingId) : null,
     unitPrice: body.unitPrice ? Number(body.unitPrice) : null,
     cashHoldingId: body.cashHoldingId ? String(body.cashHoldingId) : null,
+    counterCashHoldingId: body.counterCashHoldingId ? String(body.counterCashHoldingId) : null,
+    counterAmount: body.counterAmount ? Number(body.counterAmount) : null,
+    reimbursable: body.reimbursable ? Number(body.reimbursable) : null,
+    settlesTransactionId: body.settlesTransactionId ? String(body.settlesTransactionId) : null,
   };
 }
 

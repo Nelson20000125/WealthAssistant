@@ -27,8 +27,9 @@ export default function HealthScoreRing({ score }: { score: number }) {
   const len = (score / 100) * CIRC;
   const dashArray = `${Math.max(len - 1.5, 0)} ${CIRC - Math.max(len - 1.5, 0)}`;
 
+  // 与 DonutChart 同一套尺寸逻辑：随容器缩放，不再钉死 152px
   return (
-    <div className="relative h-[152px] w-[152px] shrink-0">
+    <div className="relative aspect-square w-[152px] max-w-[200px] min-w-[132px] shrink-0 sm:w-[30%]">
       <svg viewBox="0 0 144 144" className="h-full w-full -rotate-90">
         <circle cx="72" cy="72" r={R} fill="none" stroke="var(--line)" strokeWidth={STROKE} />
         <circle
@@ -44,7 +45,7 @@ export default function HealthScoreRing({ score }: { score: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className="text-4xl font-semibold tabular-nums text-ink">{Math.round(animatedScore)}</div>
+        <div className="text-4xl font-semibold font-mono tabular-nums text-ink">{Math.round(animatedScore)}</div>
         <div className="text-[11px] text-ink-muted">健康分</div>
       </div>
     </div>

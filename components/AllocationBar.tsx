@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatPct } from "@/lib/format";
+import { formatShare } from "@/lib/format";
 
 type Segment = { assetType: string; valueMYR: number; pct: number };
 
@@ -56,7 +56,7 @@ export default function AllocationBar({ segments }: { segments: Segment[] }) {
             <span className="text-ink-secondary">
               {ASSET_TYPE_LABEL[s.assetType] ?? s.assetType}
             </span>
-            <span className="font-medium text-ink">{formatPct(s.pct)}</span>
+            <span className="font-medium text-ink">{formatShare(s.pct)}</span>
           </div>
         ))}
       </div>

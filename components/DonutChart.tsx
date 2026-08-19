@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatMYR, formatPct } from "@/lib/format";
+import { formatMYR, formatShare } from "@/lib/format";
 import { AssetIcon } from "@/components/icons";
 
 type Segment = { key: string; label: string; valueMYR: number; pct: number; color: string };
@@ -39,7 +39,9 @@ export default function DonutChart({
 
   return (
     <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
-      <div className="relative h-[152px] w-[152px] shrink-0">
+      {/* 尺寸随容器走，不再钉死 152px。原本固定尺寸的后果是：在 1152px 宽的卡片里
+          圆环小得配不上它的地位，缩到手机宽度时又不跟着缩。上下限保证极端容器下仍可读。 */}
+      <div className="relative aspect-square w-full max-w-[240px] min-w-[132px] shrink-0 sm:w-[38%]">
         <svg viewBox="0 0 144 144" className="h-full w-full -rotate-90">
           <circle cx="72" cy="72" r={R} fill="none" stroke="var(--line)" strokeWidth={STROKE} />
           {arcs.map((a, i) => (
@@ -78,8 +80,8 @@ export default function DonutChart({
             </span>
             <div className="flex flex-1 items-baseline justify-between gap-3">
               <span className="whitespace-nowrap text-sm text-ink-secondary">{s.label}</span>
-              <span className="whitespace-nowrap text-sm font-medium text-ink tabular-nums">
-                {formatPct(s.pct)} · {formatMYR(s.valueMYR, true)}
+              <span className="whitespace-nowrap text-sm font-medium text-ink font-mono tabular-nums">
+                {formatShare(s.pct)} · {formatMYR(s.valueMYR, true)}
               </span>
             </div>
           </div>

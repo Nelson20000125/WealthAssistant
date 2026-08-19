@@ -40,7 +40,7 @@ export default async function SettingsPage() {
           currency: a.currency, holdingsCount: a._count.holdings,
         }))}
         categories={categories.map((c) => ({
-          id: c.id, name: c.name, type: c.type,
+          id: c.id, name: c.name, type: c.type, countsInTotals: c.countsInTotals,
           txCount: c._count.transactions, ruleCount: c._count.rules,
         }))}
         rules={rules.map((r) => ({

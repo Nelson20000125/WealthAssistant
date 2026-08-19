@@ -8,8 +8,11 @@ export async function POST() {
   const session = await auth();
   const userId = session!.user.id;
 
+  // 依 valuation 而不是 symbol 判断。原本的 `symbol != null` 会把无代号的
+  // 手动估值持仓（Public Mutual 基金、定存、房产）一起纳入判断范围之外，
+  // 但那些持仓的价格本来就不该由行情 API 决定 —— 现在语义直接写在栏位上。
   const holdings = await prisma.holding.findMany({
-    where: { symbol: { not: null }, assetType: { not: "CASH" }, account: { userId } },
+    where: { valuation: "AUTO", symbol: { not: null }, account: { userId } },
   });
 
   const prices = [];

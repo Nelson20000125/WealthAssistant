@@ -23,6 +23,20 @@ enum AssetType {
   FUND
   CRYPTO
   CASH
+  PROPERTY
+  COMMODITY
+  DEPOSIT
+  OTHER
+}
+
+// 「怎么给这笔持仓估值」。刻意跟 AssetType 分开：AssetType 管分类展示
+// （配置饼图、treemap 分色），Valuation 管行为（要不要抓报价、表单显示什么、
+// 现值怎么算）。合在一起的后果是 UI 得写「定存请选基金」这种提示来凑合。
+enum Valuation {
+  AUTO // 有 symbol，行情 API 抓：VOO / BTC
+  MANUAL_UNIT_PRICE // 份额 × 手填单价：Public Mutual 基金、黄金
+  MANUAL_VALUE // 直接填市值，无份额概念：房产、EPF、定存
+  DERIVED // 现金：期初余额 + 流水推导，不可手改
 }
 
 enum TransactionType {
@@ -89,6 +103,7 @@ model Holding {
   account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accountId  String
   assetType  AssetType
+  valuation  Valuation @default(AUTO) // 估值方式，决定所有取价/算值行为
   symbol     String? // 有报价代号的才填，如 VOO；现金/无代号基金留空
   name       String
   quantity   Float // 股数/份额。现金类固定为 1，金额放 costBasis（2026-07-29 统一约定）
@@ -106,8 +121,25 @@ model Holding {
   investTransactions      Transaction[] @relation("InvestTarget") // 买入这笔持仓的投资记录
   cashTransactions        Transaction[] @relation("InvestCash") // 动到这笔现金持仓的交易
   counterCashTransactions Transaction[] @relation("TransferCounterCash") // 转帐/换汇的对手侧
+  prices     HoldingPrice[] // 手动估值的历史价（AUTO 型不用，行情走 PriceCache）
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+}
+
+// 手动估值持仓的价格历史。存历史而非只存最新价，是因为手动更新必然是
+// 「隔几周补一次」——只留最新价的话，净值曲线会在补录那天跳一个台阶，
+// 而那个台阶是记录行为造成的，不是市场发生的事。
+// MANUAL_UNIT_PRICE 存每单位价格，MANUAL_VALUE 存总市值（quantity 恒为 1）。
+model HoldingPrice {
+  id        String   @id @default(cuid())
+  holding   Holding  @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+  holdingId String
+  date      DateTime // 该价格生效日（可补录过去日期）
+  price     Float
+  createdAt DateTime @default(now())
+
+  @@unique([holdingId, date])
+  @@index([holdingId, date])
 }
 
 // 行情报价快取，减少打第三方行情 API 的次数（Yahoo 无日额度但仍会限流）
@@ -138,6 +170,10 @@ model Category {
   userId       String
   name         String
   type         TransactionType @default(EXPENSE)
+  // false = 这个分类底下的流水不进收入/支出汇总。给「钱进来了但不是收入」的
+  // 情况用，例如「投资进账」其实是自己的钱从别的池子转过来的。
+  // 只影响统计口径，现金余额照常推导（钱确实动了）。
+  countsInTotals Boolean       @default(true)
   rules        CategoryRule[]
   transactions Transaction[]
 
@@ -187,7 +223,22 @@ model Transaction {
   counterCashHoldingId String? // 转入的现金持仓
   counterAmount        Float? // 转入侧金额；同币种转帐＝amount，换汇则不等
 
+  // ---- 垫付 / 还款（2026-08-12）----
+  // 垫钱请客不是费用，是应收：钱确实离开现金池（amount 全额），但其中
+  // reimbursable 那部分只是从现金变成了「别人欠我」，没有被消耗掉。
+  // 所以支出汇总只计 amount - reimbursable，而现金推导仍用 amount 全额。
+  reimbursable Float? // 这笔支出里垫付给别人、预期会收回的金额；null = 没垫付
+
+  // 还款笔指回被冲销的那笔垫付支出。一笔垫付可以被多笔还款陆续冲销
+  // （一桌人各自转钱），所以是一对多。有指向的收入不计入收入汇总——
+  // 它只是应收变回现金，不是新赚到的钱。
+  settlesTransaction   Transaction?  @relation("Settlement", fields: [settlesTransactionId], references: [id], onDelete: SetNull)
+  settlesTransactionId String?
+  settledBy            Transaction[] @relation("Settlement")
+
   createdAt  DateTime          @default(now())
+
+  @@index([settlesTransactionId])
 }
 
 // 一次对帐单汇入批次，方便追溯/整批撤销

@@ -11,6 +11,7 @@ type Holding = {
   accountId: string;
   accountName: string;
   assetType: string;
+  valuation: string;
   symbol: string | null;
   name: string;
   quantity: number;
@@ -38,11 +39,12 @@ type ViewMode = (typeof VIEWS)[number]["key"];
  */
 export default function HoldingsView({
   holdings,
-  netWorthMYR,
+  totalMYR,
   accounts,
 }: {
   holdings: Holding[];
-  netWorthMYR: number;
+  /** 占比的分母：投资总额（不含现金）。现金归收支页管 */
+  totalMYR: number;
   accounts: Account[];
 }) {
   const [view, setView] = useState<ViewMode>("TABLE");
@@ -71,7 +73,7 @@ export default function HoldingsView({
       {view === "TREEMAP" ? (
         <HoldingsTreemap holdings={holdings} />
       ) : (
-        <HoldingsTable holdings={holdings} netWorthMYR={netWorthMYR} accounts={accounts} />
+        <HoldingsTable holdings={holdings} totalMYR={totalMYR} accounts={accounts} />
       )}
     </div>
   );

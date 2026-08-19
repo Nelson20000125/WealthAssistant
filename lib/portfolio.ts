@@ -7,11 +7,20 @@ function rateFor(currency: string, fxRates: { base: string; quote: string; rate:
 }
 
 export async function getPortfolioSummary(userId: string) {
-  const [accounts, fxRates, derivedCash] = await Promise.all([
+  const [accounts, fxRates, derivedCash, manualPrices] = await Promise.all([
     prisma.account.findMany({ where: { userId }, include: { holdings: true } }),
     prisma.fxRate.findMany(),
     getDerivedCashBalances(userId),
+    // 手动估值持仓的最新一笔价格。distinct + orderBy desc 取每个持仓的最新日，
+    // 补录过去日期不会覆盖更新的价（补录只影响历史快照重算，不影响当前估值）。
+    prisma.holdingPrice.findMany({
+      where: { holding: { account: { userId } } },
+      orderBy: { date: "desc" },
+      distinct: ["holdingId"],
+    }),
   ]);
+
+  const manualPriceBy = new Map(manualPrices.map((p) => [p.holdingId, p]));
 
   let netWorthMYR = 0;
   let costMYR = 0;
@@ -25,7 +34,11 @@ export async function getPortfolioSummary(userId: string) {
   for (const account of accounts) {
     for (const h of account.holdings) {
       const rate = rateFor(h.currency, fxRates);
-      const unitPrice = h.lastPrice ?? h.costBasis;
+      // 手动估值优先：MANUAL_UNIT_PRICE 存每单位价，MANUAL_VALUE 存总市值（quantity 恒为 1），
+      // 两者算式相同，不需分支。AUTO 型没有 HoldingPrice 纪录，自然落回行情快取。
+      // 都没有才退回 costBasis —— 那代表这笔持仓从没估过值，盈亏会显示为 0。
+      const manual = manualPriceBy.get(h.id);
+      const unitPrice = manual?.price ?? h.lastPrice ?? h.costBasis;
 
       // 现金：余额来自流水推导，不看 costBasis。推导不出来（没设期初）才退回旧算法。
       const derived = h.assetType === "CASH" ? derivedCash.get(h.id) : undefined;
@@ -62,13 +75,20 @@ export async function getPortfolioSummary(userId: string) {
         accountId: h.accountId,
         accountName: account.name,
         assetType: h.assetType,
+        valuation: h.valuation,
         symbol: h.symbol,
         name: h.name,
         quantity: h.quantity,
         costBasis: h.costBasis,
         currency: h.currency,
         unitPrice,
-        priceAsOf: h.priceAsOf,
+        // 手动估值的持仓，「几时估的」看的是 HoldingPrice 的日期，不是行情快取时间
+        priceAsOf: manual?.date ?? h.priceAsOf,
+        // 手动型但一笔价都没填过 —— 现值等于成本，盈亏恒为 0。UI 要能标出来，
+        // 否则使用者看到的 0% 会被当成「没涨没跌」而不是「没估过值」。
+        needsValuation:
+          (h.valuation === "MANUAL_UNIT_PRICE" || h.valuation === "MANUAL_VALUE") &&
+          manual === undefined,
         valueMYR,
         costValueMYR,
         fxMissing: rate === null,

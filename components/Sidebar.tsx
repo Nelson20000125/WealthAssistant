@@ -58,7 +58,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string | null }) {
           <form action={logout}>
             <button
               type="submit"
-              className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-page hover:text-ink"
+              className="shrink-0 rounded-md px-2 py-1 text-xs whitespace-nowrap text-ink-secondary hover:bg-page hover:text-ink"
             >
               登出
             </button>

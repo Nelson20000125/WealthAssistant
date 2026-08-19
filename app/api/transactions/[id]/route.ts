@@ -19,6 +19,10 @@ export async function PATCH(
       holdingId: body.holdingId ?? null,
       unitPrice: body.unitPrice ? Number(body.unitPrice) : null,
       cashHoldingId: body.cashHoldingId ?? null,
+      counterCashHoldingId: body.counterCashHoldingId ?? null,
+      counterAmount: body.counterAmount ? Number(body.counterAmount) : null,
+      reimbursable: body.reimbursable ? Number(body.reimbursable) : null,
+      settlesTransactionId: body.settlesTransactionId ?? null,
     };
     return NextResponse.json(await updateTransaction(session!.user.id, id, input));
   } catch (error) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DEFAULT_VALUATION } from "@/lib/holdingValidation";
 
 type Account = { id: string; name: string; type: string; institution: string; currency: string };
 
@@ -8,11 +9,14 @@ export type HoldingFormValues = {
   id?: string;
   accountId: string;
   assetType: string;
+  valuation: string;
   name: string;
   symbol: string;
   quantity: string;
   costBasis: string;
   currency: string;
+  /** 建仓日，只在新增时用：非现金会用它当那笔 INVEST 记录的日期 */
+  openedAt?: string;
   // 现金专用：余额由流水推导，能改的只有起点
   openingBalance?: string;
   openingBalanceDate?: string;
@@ -25,7 +29,22 @@ const ASSET_TYPE_OPTIONS = [
   { value: "FUND", label: "基金" },
   { value: "CASH", label: "现金" },
   { value: "CRYPTO", label: "加密货币" },
+  { value: "PROPERTY", label: "房产" },
+  { value: "COMMODITY", label: "商品（黄金等）" },
+  { value: "DEPOSIT", label: "定存 / 公积金" },
+  { value: "OTHER", label: "其他" },
 ];
+
+const VALUATION_OPTIONS = [
+  { value: "AUTO", label: "自动抓价", hint: "有交易所代号，系统每次刷新自动更新" },
+  { value: "MANUAL_UNIT_PRICE", label: "手动填单价", hint: "有份额概念，你定期填每单位净值（如 Public Mutual 基金）" },
+  { value: "MANUAL_VALUE", label: "手动填市值", hint: "没有份额概念，直接填现在总共值多少（如房产、定存）" },
+  { value: "DERIVED", label: "由流水推导", hint: "现金专用：余额 = 期初 + 之后每一笔收支" },
+];
+
+// 选了资产类型就给一个合理的估值方式，使用者不需要先懂这两个轴的差别。
+// 仍然可以自己改 —— 例如有些人的黄金是有报价代号的 ETF。
+// 映射与後端共用同一份（lib/holdingValidation.ts），避免两边漂移。
 
 const ACCOUNT_TYPE_OPTIONS = [
   { value: "BROKERAGE", label: "证券户" },
@@ -66,6 +85,9 @@ export default function HoldingFormModal({
   const isDerivedCash =
     mode === "edit" && values.assetType === "CASH" && values.openingBalance !== undefined;
 
+  // 只有总市值、没有份额的持仓（房产、定存）：份额固定 1，成本填总额
+  const isTotalValue = values.valuation === "MANUAL_VALUE";
+
   const handleCreateAccount = async () => {
     setCreatingAccount(true);
     setAccountError(null);
@@ -100,11 +122,14 @@ export default function HoldingFormModal({
     const payload = {
       accountId: values.accountId,
       assetType: values.assetType,
+      valuation: values.valuation,
       name: values.name,
       symbol: values.symbol || null,
-      quantity: Number(values.quantity),
+      // MANUAL_VALUE 没有份额概念：份额固定 1，总市值放在价格上（沿用现金的约定）
+      quantity: values.valuation === "MANUAL_VALUE" ? 1 : Number(values.quantity),
       costBasis: Number(values.costBasis),
       currency: values.currency,
+      ...(mode === "create" && values.openedAt ? { openedAt: values.openedAt } : {}),
       ...(isDerivedCash
         ? {
             openingBalance: Number(values.openingBalance),
@@ -238,7 +263,12 @@ export default function HoldingFormModal({
             <select
               required
               value={values.assetType}
-              onChange={(e) => update({ assetType: e.target.value })}
+              onChange={(e) =>
+                update({
+                  assetType: e.target.value,
+                  valuation: DEFAULT_VALUATION[e.target.value] ?? values.valuation,
+                })
+              }
               className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
             >
               {ASSET_TYPE_OPTIONS.map((o) => (
@@ -250,9 +280,27 @@ export default function HoldingFormModal({
             {values.assetType === "CASH" && (
               <p className="text-xs text-ink-muted">
                 现金持仓<strong>不能</strong>当投资记录的目标 —— 投资的目标持仓下拉会把现金过滤掉。
-                定存、公积金这类「投进去多少钱」的资产请选<strong>基金</strong>。
               </p>
             )}
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-ink-muted">估值方式</span>
+            <select
+              required
+              value={values.valuation}
+              onChange={(e) => update({ valuation: e.target.value })}
+              className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
+            >
+              {VALUATION_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-ink-muted">
+              {VALUATION_OPTIONS.find((o) => o.value === values.valuation)?.hint}
+            </p>
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
@@ -266,21 +314,27 @@ export default function HoldingFormModal({
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-ink-muted">代号（可留空）</span>
-            <input
-              value={values.symbol}
-              onChange={(e) => update({ symbol: e.target.value })}
-              placeholder="例如 VOO"
-              className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
-            />
-          </label>
+          {values.valuation === "AUTO" && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-ink-muted">代号</span>
+              <input
+                required
+                value={values.symbol}
+                onChange={(e) => update({ symbol: e.target.value })}
+                placeholder="例如 VOO"
+                className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
+              />
+              <p className="text-xs text-ink-muted">
+                自动抓价靠这个代号。抓不到价的标的请改选手动估值，否则盈亏会一直是 0。
+              </p>
+            </label>
+          )}
 
           {isDerivedCash ? (
             <div className="flex flex-col gap-3 rounded-md border border-line p-3">
               <div className="flex items-baseline justify-between">
                 <span className="text-xs font-medium text-ink-muted">目前余额</span>
-                <span className="tabular-nums text-base font-medium text-ink">
+                <span className="font-mono tabular-nums text-base font-medium text-ink">
                   {values.derivedBalance != null
                     ? values.derivedBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                     : "—"}{" "}
@@ -319,21 +373,47 @@ export default function HoldingFormModal({
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            mode === "edit" ? (
+            <div className="flex flex-col gap-2 rounded-md border border-line p-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1 text-sm">
+                  <span className="text-ink-muted">份额</span>
+                  <span className="font-mono tabular-nums text-ink">{values.quantity}</span>
+                </div>
+                <div className="flex flex-col gap-1 text-sm">
+                  <span className="text-ink-muted">
+                    {isTotalValue ? "投入成本（总额）" : "每单位成本"}
+                  </span>
+                  <span className="font-mono tabular-nums text-ink">{values.costBasis}</span>
+                </div>
+              </div>
+              <p className="text-xs text-ink-muted">
+                这两个数字是<strong>算出来的</strong>：每一笔投资记录的加权平均。
+                要更正请去「收支记录」改对应的投资记录，在这里改不会生效。
+              </p>
+            </div>
+            ) : (
+            <div className={isTotalValue ? "" : "grid grid-cols-2 gap-3"}>
+              {/* MANUAL_VALUE 没有份额概念，份额固定 1、市值放在价格上，
+                  所以不给填数量 —— 给了只会让人以为它有意义。 */}
+              {!isTotalValue && (
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-ink-muted">数量</span>
+                  <input
+                    required
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={values.quantity}
+                    onChange={(e) => update({ quantity: e.target.value })}
+                    className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
+                  />
+                </label>
+              )}
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-ink-muted">数量</span>
-                <input
-                  required
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={values.quantity}
-                  onChange={(e) => update({ quantity: e.target.value })}
-                  className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-ink-muted">每单位成本</span>
+                <span className="text-ink-muted">
+                  {isTotalValue ? "投入成本（总额）" : "每单位成本"}
+                </span>
                 <input
                   required
                   type="number"
@@ -345,6 +425,24 @@ export default function HoldingFormModal({
                 />
               </label>
             </div>
+            )
+          )}
+
+          {mode === "create" && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-ink-muted">建仓日期</span>
+              <input
+                type="date"
+                value={values.openedAt ?? ""}
+                onChange={(e) => update({ openedAt: e.target.value })}
+                className="rounded-md border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-ink"
+              />
+              <p className="text-xs text-ink-muted">
+                {values.assetType === "CASH"
+                  ? "余额的起算日。这天之後的流水才会计入。"
+                  : "会用这个日期建立一笔投资记录。留空就用今天 —— 但历史持仓填对日期，收益率才算得准。"}
+              </p>
+            </label>
           )}
 
           <label className="flex flex-col gap-1 text-sm">

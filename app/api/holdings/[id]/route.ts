@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { validateHoldingInput } from "@/lib/holdingValidation";
+import { validateHoldingInput, resolveValuation } from "@/lib/holdingValidation";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -20,9 +20,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: "户口不存在" }, { status: 404 });
   }
 
-  // 推导型现金：余额 = 期初 + 流水，quantity/costBasis 是算出来的结果而不是输入。
-  // 照收会写进去但被 getPortfolioSummary 忽略 —— 使用者改了没反应也没错误讯息。
-  // 这里改成只让改「期初余额/期初日」，今天的余额一律不接受手改。
+  // quantity / costBasis 一律不接受手改（决策 2026-08-06，成本单一事实来源）：
+  //   现金   -> 余额 = openingBalance + 流水（getDerivedCashBalances）
+  //   非现金 -> 份额与成本 = INVEST 交易的加权平均（transactions.ts:applyInvest）
+  // 两者都是算出来的结果。照收会写进去但下一笔交易就被重算覆盖，
+  // 使用者只会得到「改了过一阵子又变回去」这种最难查的行为。
+  // 要改成本，去改对应的投资记录。
   const isDerivedCash = existing.assetType === "CASH" && existing.openingBalance !== null;
 
   const holding = await prisma.holding.update({
@@ -30,10 +33,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     data: {
       accountId: body.accountId,
       assetType: body.assetType,
+      valuation: resolveValuation(body.assetType, body.valuation)!,
       name: body.name.trim(),
       symbol: body.symbol?.trim() || null,
-      quantity: isDerivedCash ? existing.quantity : body.quantity,
-      costBasis: isDerivedCash ? existing.costBasis : body.costBasis,
+      quantity: existing.quantity,
+      costBasis: existing.costBasis,
       currency: body.currency.trim().toUpperCase(),
       ...(body.openingBalance !== undefined && body.openingBalance !== null
         ? { openingBalance: Number(body.openingBalance) }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 type Account = { id: string; name: string; type: string; institution: string; currency: string; holdingsCount: number };
-type Category = { id: string; name: string; type: string; txCount: number; ruleCount: number };
+type Category = { id: string; name: string; type: string; countsInTotals: boolean; txCount: number; ruleCount: number };
 type Rule = { id: string; keyword: string; categoryId: string; categoryName: string; categoryType: string };
 
 const TAB = { accounts: "户口", categories: "分类", rules: "关键字规则" } as const;
@@ -213,6 +213,7 @@ function CategoriesTab({ categories, call, busy }: { categories: Category[]; cal
             <tr>
               <th className="px-4 py-2 text-left font-medium">名称</th>
               <th className="px-4 py-2 text-left font-medium">型别</th>
+              <th className="px-4 py-2 text-center font-medium">计入汇总</th>
               <th className="px-4 py-2 text-right font-medium">交易 / 规则</th>
               <th className="px-4 py-2 text-right font-medium">操作</th>
             </tr>
@@ -226,7 +227,18 @@ function CategoriesTab({ categories, call, busy }: { categories: Category[]; cal
                   ) : <span className="text-ink">{c.name}</span>}
                 </td>
                 <td className="px-4 py-2 text-ink-secondary">{TYPE_LABEL[c.type] ?? c.type}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-ink-muted">{c.txCount} / {c.ruleCount}</td>
+                <td className="px-4 py-2 text-center">
+                  <input
+                    type="checkbox"
+                    checked={c.countsInTotals}
+                    disabled={busy}
+                    onChange={(e) =>
+                      call(`/api/categories/${c.id}`, "PATCH", { countsInTotals: e.target.checked })
+                    }
+                    className="size-4 accent-portfolio-accent align-middle"
+                  />
+                </td>
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-ink-muted">{c.txCount} / {c.ruleCount}</td>
                 <td className="px-4 py-2 text-right whitespace-nowrap">
                   {editing === c.id ? (
                     <>
@@ -249,6 +261,11 @@ function CategoriesTab({ categories, call, busy }: { categories: Category[]; cal
           </tbody>
         </table>
       </div>
+      <p className="text-xs text-ink-muted">
+        取消勾选<strong>计入汇总</strong>，这个分类底下的流水就不进收入/支出汇总与分类占比，
+        但现金余额照算全额。给「钱进来了但不是收入」的情况用——像朋友还钱、投资赎回转回来的本金，
+        算进收入会让月报表虚高。
+      </p>
     </div>
   );
 }
@@ -318,7 +335,7 @@ function AccountsTab({ accounts, call, busy }: { accounts: Account[]; call: Call
                     {isEdit ? <input className={`${input} w-20`} maxLength={3} value={draft.currency}
                       onChange={(e) => setDraft({ ...draft, currency: e.target.value.toUpperCase() })} /> : <span className="text-ink-secondary">{a.currency}</span>}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-ink-muted">{a.holdingsCount}</td>
+                  <td className="px-4 py-2 text-right font-mono tabular-nums text-ink-muted">{a.holdingsCount}</td>
                   <td className="px-4 py-2 text-right whitespace-nowrap">
                     {isEdit ? (
                       <>

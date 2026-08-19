@@ -32,10 +32,31 @@ export function formatCurrency(value: number, currency: string) {
   }).format(value);
 }
 
+// 涨跌幅：带正负号。「+2.2%」代表涨了。
 export function formatPct(value: number) {
   return new Intl.NumberFormat("en-MY", {
     style: "percent",
     maximumFractionDigits: 1,
     signDisplay: "exceptZero",
+  }).format(value);
+}
+
+// 持仓份额。券商的碎股成交会给出 1.78529826143312 这种数，直接渲染是 14 位小数，
+// 而读者需要的精度远低于此。收敛到 6 位并去掉末尾的零（150 份就显示 150，不是 150.000000）。
+export function formatQuantity(value: number) {
+  return new Intl.NumberFormat("en-MY", {
+    maximumFractionDigits: 6,
+  }).format(value);
+}
+
+// 占比：绝不带正号。跟 formatPct 分开是因为两者语义相反 ——
+// 共用一个函数时，「现金占净资产 59.3%」会渲染成「+59.3%」，读起来像现金涨了 59.3%；
+// 持仓卡片里「配置占比 +29.6%」跟它正下方的盈亏「+2.2%」格式一模一样，无法分辨。
+// 负值仍保留负号（占比理论上不会是负的，真出现时不该被静默吃掉）。
+export function formatShare(value: number) {
+  return new Intl.NumberFormat("en-MY", {
+    style: "percent",
+    maximumFractionDigits: 1,
+    signDisplay: "negative",
   }).format(value);
 }

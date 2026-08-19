@@ -5,6 +5,7 @@ import { parsePBEStatement, parseTNGStatement } from "@/lib/pdfStatement";
 import { parsePBECsv } from "@/lib/csvStatement";
 import { matchCategoryByKeyword } from "@/lib/categoryRules";
 import { aiSuggestCategories } from "@/lib/aiCategorize";
+import { partitionByExisting } from "@/lib/importDedupe";
 import type { TxType } from "@/lib/transactions";
 
 // 上传 PDF → 解析 → 关键字分类比对，只回传预览列表，不写 DB（汇入前必须先给用户看过再确认）
@@ -34,23 +35,12 @@ export async function POST(request: Request) {
     const fallbackExpenseId = categories.find((c) => c.name === "其他" && c.type === "EXPENSE")!.id;
     const fallbackIncomeId = categories.find((c) => c.name === "其他" && c.type === "INCOME")!.id;
 
-    // 重复侦测：同一笔交易如果之前汇入过，日期/金额/描述会完全一致（对帐单本身文字不会变），
-    // 拿这三个组指纹去比对该用户已存在的记录，命中的直接从预览里排除，不用使用者自己肉眼挑重复
-    const fp = (date: Date, amount: number, description: string) =>
-      `${date.toISOString().slice(0, 10)}|${amount.toFixed(2)}|${description}`;
-
-    let existingFingerprints = new Set<string>();
-    if (parsed.transactions.length > 0) {
-      const dates = parsed.transactions.map((t) => t.date.getTime());
-      const existing = await prisma.transaction.findMany({
-        where: {
-          userId,
-          date: { gte: new Date(Math.min(...dates)), lte: new Date(Math.max(...dates)) },
-        },
-        select: { date: true, amount: true, description: true },
-      });
-      existingFingerprints = new Set(existing.map((e) => fp(e.date, e.amount, e.description)));
-    }
+    // 重复侦测：命中的直接从预览里排除，不用使用者自己肉眼挑重复。
+    // 判定规则见 lib/importDedupe.ts，confirm 那侧写入前会再挡一次。
+    const { fresh, duplicates: skippedDuplicates } = await partitionByExisting(
+      userId,
+      parsed.transactions
+    );
 
     const rows: {
       date: string;
@@ -61,15 +51,10 @@ export async function POST(request: Request) {
       type: TxType | undefined;
       aiSuggested?: boolean;
     }[] = [];
-    let skippedDuplicates = 0;
     // 关键字规则没命中、落回「其他」的行，留着交给 AI 二次判断（比如没见过的餐厅/宠物店名）
     const unmatched: { index: number; description: string; direction: "DEBIT" | "CREDIT" }[] = [];
 
-    for (const t of parsed.transactions) {
-      if (existingFingerprints.has(fp(t.date, t.amount, t.description))) {
-        skippedDuplicates++;
-        continue;
-      }
+    for (const t of fresh) {
       const matchedCategoryId = await matchCategoryByKeyword(userId, t.description);
       const categoryId = matchedCategoryId ?? (t.direction === "DEBIT" ? fallbackExpenseId : fallbackIncomeId);
       const index = rows.length;

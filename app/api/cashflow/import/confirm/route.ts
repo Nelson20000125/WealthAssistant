@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { partitionByExisting } from "@/lib/importDedupe";
 
 type ConfirmRow = { date: string; amount: number; categoryId: string; description: string };
 
@@ -18,19 +19,31 @@ export async function POST(request: Request) {
     const rows: ConfirmRow[] = Array.isArray(body.rows) ? body.rows : [];
     if (rows.length === 0) throw new Error("没有可汇入的交易");
 
-    const categoryIds = Array.from(new Set(rows.map((r) => String(r.categoryId))));
+    // 预览到确认之间隔着使用者的操作时间，那段时间同一份档案可能已经从另一个分页汇入过。
+    // parse 剔过一次不代表这里就安全 —— 真正写入前再挡一次。
+    const deduped = await partitionByExisting(
+      userId,
+      rows.map((r) => ({ ...r, date: new Date(String(r.date)), amount: Number(r.amount) }))
+    );
+    if (deduped.fresh.length === 0) {
+      return NextResponse.json(
+        { importBatchId: null, count: 0, skippedDuplicates: deduped.duplicates },
+        { status: 200 }
+      );
+    }
+
+    const categoryIds = Array.from(new Set(deduped.fresh.map((r) => String(r.categoryId))));
     const categories = await prisma.category.findMany({ where: { id: { in: categoryIds }, userId } });
     if (categories.length !== categoryIds.length) throw new Error("有分类不属于当前用户");
     const categoryById = new Map(categories.map((c) => [c.id, c]));
 
     const batch = await prisma.$transaction(async (tx) => {
       const created = await tx.importBatch.create({ data: { userId, fileName } });
-      for (const r of rows) {
+      for (const r of deduped.fresh) {
         const category = categoryById.get(String(r.categoryId));
         if (!category) throw new Error("分类不存在");
-        const date = new Date(String(r.date));
+        const { date, amount } = r;
         if (Number.isNaN(date.getTime())) throw new Error("日期无效");
-        const amount = Number(r.amount);
         if (!Number.isFinite(amount) || amount <= 0) throw new Error("金额必须大于 0");
 
         await tx.transaction.create({
@@ -50,7 +63,10 @@ export async function POST(request: Request) {
       return created;
     });
 
-    return NextResponse.json({ importBatchId: batch.id, count: rows.length }, { status: 201 });
+    return NextResponse.json(
+      { importBatchId: batch.id, count: deduped.fresh.length, skippedDuplicates: deduped.duplicates },
+      { status: 201 }
+    );
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 400 });
   }

@@ -133,7 +133,7 @@ export default function HoldingsTreemap({ holdings }: { holdings: Holding[] }) {
                 <div className="truncate text-xs font-semibold text-ink">
                   {h.symbol ?? h.name}
                 </div>
-                <div className="truncate text-xs text-ink-secondary tabular-nums">
+                <div className="truncate text-xs text-ink-secondary font-mono tabular-nums">
                   {formatMYR(h.valueMYR!, true)}
                   {h.plPct !== null && ` · ${formatPct(h.plPct)}`}
                 </div>

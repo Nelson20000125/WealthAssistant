@@ -1,4 +1,4 @@
-import { formatMYR, formatPct } from "@/lib/format";
+import { formatMYR, formatShare } from "@/lib/format";
 import { AssetIcon } from "@/components/icons";
 import Value from "@/components/Value";
 
@@ -25,6 +25,8 @@ type Holding = {
   symbol: string | null;
   valueMYR: number | null;
   costValueMYR: number | null;
+  /** 手动估值型但一笔价都没填过 —— 现值等于成本，盈亏恒为 0 */
+  needsValuation?: boolean;
 };
 
 export default function HoldingsGrid({
@@ -38,6 +40,7 @@ export default function HoldingsGrid({
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {holdings.map((h) => {
         const color = ASSET_TYPE_COLOR[h.assetType] ?? "var(--ink-muted)";
+        const isCash = h.assetType === "CASH";
         const allocationPct = h.valueMYR !== null && netWorthMYR > 0 ? h.valueMYR / netWorthMYR : null;
         const pnlMYR = h.valueMYR !== null && h.costValueMYR !== null ? h.valueMYR - h.costValueMYR : null;
         const pnlPct = pnlMYR !== null && h.costValueMYR ? pnlMYR / h.costValueMYR : null;
@@ -61,24 +64,31 @@ export default function HoldingsGrid({
 
             <div className="mt-3 flex items-baseline justify-between">
               <span className="text-xs text-ink-muted">现值</span>
-              <span className="text-sm font-semibold text-ink tabular-nums">
+              <span className="text-sm font-semibold text-ink font-mono tabular-nums">
                 {h.valueMYR !== null ? formatMYR(h.valueMYR) : "—"}
               </span>
             </div>
             <div className="mt-1 flex items-baseline justify-between">
               <span className="text-xs text-ink-muted">成本</span>
-              <span className="text-xs text-ink-secondary tabular-nums">
+              <span className="text-xs text-ink-secondary font-mono tabular-nums">
                 {h.costValueMYR !== null ? formatMYR(h.costValueMYR) : "—"}
               </span>
             </div>
             <div className="mt-1 flex items-baseline justify-between">
               <span className="text-xs text-ink-muted">配置占比</span>
-              <span className="text-xs text-ink-secondary tabular-nums">
-                {allocationPct !== null ? formatPct(allocationPct) : "—"}
+              <span className="text-xs text-ink-secondary font-mono tabular-nums">
+                {allocationPct !== null ? formatShare(allocationPct) : "—"}
               </span>
             </div>
 
-            {pnlMYR !== null && pnlPct !== null && (
+            {/* 现金没有盈亏概念（余额由流水推导，成本恒等于现值），渲染出来必然是
+                「RM 0.00 (0%)」—— 那是在回答一个不该被问的问题，读者会以为现金持平。
+                手动估值型但从没填过价的（needsValuation）是同一类谎：那个 0.00%
+                不是「没涨没跌」，是「根本没估过」。要显式说出来，不能让它冒充持平。 */}
+            {!isCash && h.needsValuation && (
+              <div className="mt-2 text-xs font-medium text-warning">尚未估值</div>
+            )}
+            {!isCash && !h.needsValuation && pnlMYR !== null && pnlPct !== null && (
               <div className="mt-2 text-xs font-medium">
                 <Value value={pnlMYR} colorizeSign />{" "}
                 (<Value value={pnlPct} kind="percent" colorizeSign />)

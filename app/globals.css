@@ -20,11 +20,27 @@
   --portfolio-accent: #36cfcc; /* 持仓/数据强调色 */
   --portfolio-accent-deep: #16b2ad; /* teal palette-900，浅色模式下的文字/ring 用 */
 
-  /* 分类色：固定顺序，任何图表都不能因排序而互换颜色 */
-  --series-1: #16b2ad; /* 股票/ETF（teal，深色模式下提亮为 #36cfcc） */
-  --series-2: #16a34a; /* 基金 */
-  --series-3: #f59e0b; /* 现金 */
-  --series-4: #6366f1; /* 加密货币 */
+  /* 分类色「冷调有序」（2026-08-19 定案）：色相从品牌 teal 单向推进到蓝、靛、板岩，
+     整条链留在冷色区间。这么排有两个理由：
+
+     一、顺序本身携带信息 —— 越靠前越是风险资产，视觉上自然分组，
+         不像随机色相那样每一块都在抢注意力。
+     二、和「Investment OS · 机构感」这个定位一致。机构级金融界面（Ghostfolio、
+         Bloomberg、券商终端）的共同特征是克制：一个品牌色 + 一套阶，
+         红绿严格留给盈亏。彩虹色板读起来像数据可视化练习，不像资产管理工具。
+
+     绿（~145°）与红（~0°）在这条链上完全缺席，是刻意的：那两个色相只属于盈亏。
+     分类色一旦借用语义色，读者就无法分辨「这块是基金」和「这块在赚钱」——
+     历史上 --series-2 与 --good 曾是同一个值 #16a34a，--series-3 与 --warning
+     同为 #f59e0b，--series-4 与 --ai-accent 同为 #6366f1。 */
+  --series-1: #16b2ad; /* 股票/ETF —— 品牌 teal，链条起点 */
+  --series-2: #0e86a8; /* 基金 */
+  --series-3: #1e6fa8; /* 现金 */
+  --series-4: #2f5aa0; /* 加密货币 */
+  --series-5: #455399; /* 定存/公积金 */
+  --series-6: #5b5f93; /* 房产 */
+  --series-7: #6e6b8e; /* 商品（黄金等） */
+  --series-8: #7b7a88; /* 其他 —— 链条终点，最接近中性 */
 
   --shadow-card: 0 1px 2px rgba(10, 10, 10, 0.04);
   --shadow-card-hover: 0 4px 12px rgba(15, 23, 42, 0.08);
@@ -65,17 +81,24 @@
   --sidebar-ring: var(--portfolio-accent-deep);
 }
 
-/* 深色模式：参照 Ghostfolio（背景 rgb(25,25,25)，.theme-dark selector 同款命名）。
+/* 深色模式：明度沿用 Ghostfolio 的基准（背景 rgb(25,25,25) 一带），
+   但色温统一到 slate（2026-08-19 定案）。
+
+   在此之前浅色用的是 Tailwind slate（#f8fafc / #0f172a / #64748b，带蓝调偏冷），
+   深色抄的是 Ghostfolio 的中性纯灰（#191919 / #232323 / #a3a3a3，完全无色偏）——
+   同一个产品的两套主题灰的温度不一样，单看任一套都没问题，切换时像两个产品。
+   现在两边都在 slate 家族，跟「冷调有序」的分类色链也是同一个色温。
+
    只覆写基础 tokens，shadcn 映射层全部 var() 引用会自动跟随 */
 :root.theme-dark {
   color-scheme: dark;
 
-  --page: #191919;
-  --surface: #232323;
-  --ink: #f5f5f5;
-  --ink-secondary: #a3a3a3;
-  --ink-muted: #737373;
-  --line: #343434;
+  --page: #14181f;
+  --surface: #1c222c;
+  --ink: #f1f5f9;
+  --ink-secondary: #94a3b8;
+  --ink-muted: #64748b;
+  --line: #2a323e;
 
   --good: #4ade80;
   --critical: #f87171;
@@ -84,15 +107,24 @@
   /* 深底上直接用品牌 teal 原色，对比度足够 */
   --portfolio-accent-deep: #36cfcc;
   --series-1: #36cfcc;
+  /* 同一条冷色链，整体提亮以适应深色底；链尾几阶要拉开明度，
+     否则深底上会一起糊成灰 */
+  --series-2: #3fb6d6;
+  --series-3: #4e9bdd;
+  --series-4: #5f86d8;
+  --series-5: #7479ce;
+  --series-6: #8878c2;
+  --series-7: #9a7db4;
+  --series-8: #a58fa6;
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.5);
 
   /* :root 里写死的浅灰，深色下需要单独覆写 */
-  --secondary: #2e2e2e;
-  --muted: #2e2e2e;
-  --accent: #2e2e2e;
-  --primary-foreground: #191919;
+  --secondary: #262d38;
+  --muted: #262d38;
+  --accent: #262d38;
+  --primary-foreground: #14181f;
 }
 
 @theme inline {

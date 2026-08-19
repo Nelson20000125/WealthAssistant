@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { updateCategory } from "@/lib/transactions";
 
 async function ownedCategory(id: string, userId: string) {
   const cat = await prisma.category.findUnique({ where: { id } });
@@ -12,19 +13,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const session = await auth();
   try {
     const { id } = await params;
-    const cat = await ownedCategory(id, session!.user.id);
     const body = await request.json();
-    const name = String(body.name ?? cat.name).trim();
-    if (!name) throw new Error("分类名不能为空");
-
-    // 只让改名字，不让改 type：分类底下的交易已经按 type 归户，
-    // 中途改型别会让那些交易的收支性质在报表里整批翻转。
-    const dup = await prisma.category.findFirst({
-      where: { userId: session!.user.id, name, type: cat.type, NOT: { id } },
-    });
-    if (dup) throw new Error(`已经有同名的「${name}」分类`);
-
-    return NextResponse.json(await prisma.category.update({ where: { id }, data: { name } }));
+    return NextResponse.json(
+      await updateCategory(session!.user.id, id, {
+        name: body.name === undefined ? undefined : String(body.name),
+        countsInTotals:
+          body.countsInTotals === undefined ? undefined : Boolean(body.countsInTotals),
+      })
+    );
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 400 });
   }
