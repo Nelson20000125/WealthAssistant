@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/prisma";
 import { getPortfolioSummary } from "@/lib/portfolio";
 import { getMonthCashflow } from "@/lib/transactions";
 import { emergencyFundMonths, emergencyFundVerdict } from "@/lib/portfolioIntelligence";
@@ -17,7 +18,13 @@ export type FinancialSummary = {
   emergencyFund: ReturnType<typeof emergencyFundVerdict>;
   /** 平均取样用到的月份数 */
   monthsSampled: number;
+  /** 最后一笔记录的日期（YYYY-MM-DD）；没有任何记录为 null */
+  dataAsOf: string | null;
+  /** 超过 STALE_DAYS 天没记账：以上数字可能建立在过期资料上 */
+  isStale: boolean;
 };
+
+const STALE_DAYS = 7;
 
 const LOOKBACK_MONTHS = 3;
 
@@ -37,7 +44,22 @@ export async function getFinancialSummary(
     months.map((m) => getMonthCashflow(userId, m.year, m.month))
   );
 
-  const recorded = cashflows.filter((c) => c.totals.expense > 0 || c.totals.income > 0);
+  const last = await prisma.transaction.findFirst({
+    where: { userId },
+    orderBy: { date: "desc" },
+    select: { date: true },
+  });
+  const dataAsOf = last ? last.date.toISOString().slice(0, 10) : null;
+  const isStale =
+    !last || today.getTime() - last.date.getTime() > STALE_DAYS * 24 * 60 * 60 * 1000;
+
+  // 只取「记账已覆盖到月底」的月份：最后一笔在 9/3 时，9 月只有三天的资料，
+  // 拿它跟完整月份一起平均会把月均收入凭空砍半（2026-10 踩过）
+  const coveredThroughMonthEnd = (m: { year: number; month: number }) =>
+    !!last && last.date.getTime() >= Date.UTC(m.year, m.month, 0);
+  const recorded = cashflows.filter(
+    (c, i) => coveredThroughMonthEnd(months[i]) && (c.totals.expense > 0 || c.totals.income > 0)
+  );
   const monthsSampled = recorded.length;
   const avg = (pick: (c: (typeof cashflows)[number]) => number) =>
     monthsSampled > 0 ? recorded.reduce((sum, c) => sum + pick(c), 0) / monthsSampled : null;
@@ -62,5 +84,7 @@ export async function getFinancialSummary(
     emergencyFundMonths: efMonths,
     emergencyFund: emergencyFundVerdict(efMonths),
     monthsSampled,
+    dataAsOf,
+    isStale,
   };
 }
