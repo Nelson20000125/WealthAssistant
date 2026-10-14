@@ -77,3 +77,7 @@ scripts/*.local.*
 # 本地 AI 协作设定，不进公开作品集
 .claude/
 CLAUDE.md
+
+# local-only clutter
+.next.broken*/
+/backups/

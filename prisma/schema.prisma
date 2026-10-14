@@ -67,6 +67,7 @@ model User {
   goals         Goal[]
   snapshots     PortfolioSnapshot[]
   aiUsage       AiUsage[]
+  pushSubscriptions PushSubscription[]
 }
 
 // AI 顾问的每日用量。公开 demo 站的帐密写在 README 里，任何人都能登入，
@@ -280,4 +281,17 @@ model PortfolioSnapshot {
   createdAt   DateTime @default(now())
 
   @@unique([userId, date])
+}
+
+// 每日记账提醒（P1-07）的 Web Push 订阅。一个用户可有多台设备
+model PushSubscription {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
