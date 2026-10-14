@@ -1,28 +1,45 @@
-import { HomeIcon, LayersIcon, NewsIcon, ChatIcon, WalletIcon, SettingsIcon } from "@/components/icons";
+import {
+  HomeIcon,
+  LayersIcon,
+  NewsIcon,
+  ChatIcon,
+  WalletIcon,
+  SettingsIcon,
+  UserIcon,
+} from "@/components/icons";
 
 export type NavItem = {
   href: string;
   label: string;
-  /** 手机底部 tab 放不下六项，用短一点的字 */
+  /** 手机底部 tab 放不下长标签，用短一点的字 */
   shortLabel: string;
   icon: (p: { className?: string }) => React.JSX.Element;
 };
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "总览", shortLabel: "总览", icon: HomeIcon },
-  { href: "/holdings", label: "持仓明细", shortLabel: "持仓", icon: LayersIcon },
   { href: "/cashflow", label: "收支记录", shortLabel: "收支", icon: WalletIcon },
+  { href: "/holdings", label: "持仓明细", shortLabel: "投资", icon: LayersIcon },
+  { href: "/advisor", label: "投资分析", shortLabel: "分析", icon: ChatIcon },
   { href: "/market-brief", label: "市场简报", shortLabel: "简报", icon: NewsIcon },
-  { href: "/advisor", label: "AI 顾问", shortLabel: "顾问", icon: ChatIcon },
-  { href: "/settings", label: "设定", shortLabel: "设定", icon: SettingsIcon },
+  { href: "/settings", label: "设置", shortLabel: "设置", icon: SettingsIcon },
 ];
 
 /**
- * 手机底部 tab 只放这四项。上限是五个，超过标签会挤到看不清楚。
- * AI 顾问留在底部而不是收进汉堡，是因为它是这个专案最想让人看到的部分，
- * 藏在抽屉里等于没有。市场简报与设定则收进汉堡。
+ * 手机底部：总览 ｜ 收支 ｜ ⊕ ｜ 投资 ｜ 我的（P0-02）。
+ *
+ * ⊕ 不是路由，是全域「记一笔」入口，由 MobileNav 自己画在正中间。
+ * 顾问、市场简报、设置全部收进「我的」—— 从前它们只在汉堡抽屉里，
+ * 进得去，但每次都要先想起「那个按钮在右上角」。
  */
-const PRIMARY_HREFS = ["/", "/holdings", "/cashflow", "/advisor"];
+const MOBILE_HREFS = ["/", "/cashflow", "/holdings", "/me"];
 
-export const MOBILE_PRIMARY_ITEMS = NAV_ITEMS.filter((i) => PRIMARY_HREFS.includes(i.href));
-export const MOBILE_DRAWER_ITEMS = NAV_ITEMS.filter((i) => !PRIMARY_HREFS.includes(i.href));
+export const MOBILE_PRIMARY_ITEMS: NavItem[] = [
+  ...NAV_ITEMS.filter((i) => MOBILE_HREFS.includes(i.href)),
+  { href: "/me", label: "我的", shortLabel: "我的", icon: UserIcon },
+];
+
+/** 「我的」页面里列出来的项目 */
+export const ME_ITEMS = NAV_ITEMS.filter((i) =>
+  ["/advisor", "/market-brief", "/settings"].includes(i.href)
+);

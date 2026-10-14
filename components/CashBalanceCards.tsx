@@ -74,43 +74,37 @@ export default function CashBalanceCards({
         <div className="text-lg font-medium font-mono tabular-nums text-ink">{formatMYR(totalMYR)}</div>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 gap-3 border-t border-line pt-5 sm:grid-cols-2 lg:grid-cols-3">
+      {/* 横向 scroll chips（P1-03）：原本 3 张大卡在手机占满首屏，把流水挤到下面 */}
+      <div className="-mx-6 mt-4 flex gap-2 overflow-x-auto px-6 pb-1">
         {pools.map((p) => (
-          <div key={p.id} className="rounded-lg border border-line p-4">
-            <div className="flex items-baseline justify-between gap-2">
-              <div className="truncate text-sm font-medium text-ink">{p.name}</div>
-              <div className="shrink-0 text-xs text-ink-muted">{p.currency}</div>
-            </div>
-            <div className="mt-1 truncate text-xs text-ink-muted">{p.accountName}</div>
-            <div className="mt-3 text-lg font-medium font-mono tabular-nums text-ink">
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => setModal({ mode: "edit", values: toFormValues(p) })}
+            title={p.isDerived ? "编辑期初" : "未设期初余额，这个数字不会跟着流水变动 —— 点此设定"}
+            className="flex min-h-11 shrink-0 flex-col items-start rounded-lg border border-line px-3 py-2 text-left hover:border-ink-muted"
+          >
+            <span className="flex max-w-40 items-center gap-1 truncate text-xs text-ink-muted">
+              {!p.isDerived && <span className="text-warning">⚠</span>}
+              {p.name}
+            </span>
+            <span className="text-sm font-medium font-mono tabular-nums text-ink">
               {formatCurrency(p.balance, p.currency)}
-            </div>
+            </span>
             {p.currency !== "MYR" && (
-              <div className="mt-0.5 text-xs text-ink-muted font-mono tabular-nums">
-                {p.balanceMYR !== null ? `≈ ${formatMYR(p.balanceMYR)}` : "缺汇率，无法折算"}
-              </div>
+              <span className="text-xs text-ink-muted font-mono tabular-nums">
+                {p.balanceMYR !== null ? `≈ ${formatMYR(p.balanceMYR)}` : "缺汇率"}
+              </span>
             )}
-            {!p.isDerived && (
-              <div className="mt-2 text-xs text-warning">
-                未设期初余额，这个数字不会跟着流水变动
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => setModal({ mode: "edit", values: toFormValues(p) })}
-              className="mt-3 text-xs text-ink-secondary hover:text-ink"
-            >
-              {p.isDerived ? "编辑期初" : "设定期初"}
-            </button>
-          </div>
+          </button>
         ))}
 
         <button
           type="button"
           onClick={() => setModal({ mode: "create", values: EMPTY_CASH_FORM })}
-          className="rounded-lg border border-dashed border-line p-4 text-sm text-ink-muted hover:border-ink-muted hover:text-ink-secondary"
+          className="flex min-h-11 shrink-0 items-center rounded-lg border border-dashed border-line px-3 text-sm text-ink-muted hover:border-ink-muted hover:text-ink-secondary"
         >
-          + 新增现金池
+          + 新增
         </button>
       </div>
 

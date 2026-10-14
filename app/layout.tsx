@@ -3,9 +3,12 @@ import { Inter, Geist_Mono, Geist } from "next/font/google";
 import Sidebar from "@/components/Sidebar";
 import MobileNav from "@/components/MobileNav";
 import AiQuickChat from "@/components/AiQuickChat";
+import QuickAdd from "@/components/QuickAdd";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { auth } from "@/auth";
+import { getQuickAddData } from "@/lib/quickAddData";
+import { Suspense } from "react";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -22,6 +25,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "私人财富管理助理",
   description: "Personal Wealth Dashboard",
+  // iOS 加到主画面后全屏开（不显示 Safari 网址栏）
+  appleWebApp: { title: "我的钱", statusBarStyle: "black" },
 };
 
 // 首帧渲染前同步执行，避免深色用户刷新时白底闪一下（FOUC）。
@@ -34,6 +39,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const session = await auth();
+  // ⊕ 要能在任何页面就地拉起记账面板（P1-02），所以选项清单挂在 layout 上取
+  const quickAdd = session ? await getQuickAddData(session.user.id) : null;
 
   return (
     <html
@@ -54,6 +61,12 @@ export default async function RootLayout({
             <main className="flex-1 px-4 pb-24 pt-6 md:px-8 md:py-8">
               <div className="mx-auto w-full max-w-6xl">{children}</div>
             </main>
+            {quickAdd && (
+              // useSearchParams 需要 Suspense 边界
+              <Suspense fallback={null}>
+                <QuickAdd {...quickAdd} />
+              </Suspense>
+            )}
             <AiQuickChat />
           </>
         ) : (

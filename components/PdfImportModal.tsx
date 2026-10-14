@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { formatMYR } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { merchantName, maskSensitive } from "@/lib/merchant";
 
 // PDF 对帐单汇入弹窗：选档案 → 上传解析（/api/cashflow/import/parse）→ 预览列表
 // （分类可手动改）→ 确认写入（/api/cashflow/import/confirm）。只在按钮点击后才会挂载，
@@ -166,8 +167,10 @@ export default function PdfImportModal({ onClose }: { onClose: () => void }) {
               {rows.map((r, i) => (
                 <div key={i} className="flex items-center gap-3 py-2.5">
                   <span className="w-12 shrink-0 text-xs text-ink-muted font-mono tabular-nums">{r.date.slice(5, 10)}</span>
-                  <span className="min-w-0 flex-1 truncate text-xs text-ink-secondary" title={r.description}>
-                    {r.description}
+                  {/* 预览也要遮敏感号码 —— 对帐单的原始描述就是卡号泄露的源头（P0-01）。
+                      写进资料库的仍是完整原文，只有画面上遮。 */}
+                  <span className="min-w-0 flex-1 truncate text-xs text-ink-secondary" title={maskSensitive(r.description)}>
+                    {merchantName(r.description)}
                   </span>
                   <span
                     className={`shrink-0 text-sm font-medium font-mono tabular-nums ${r.direction === "CREDIT" ? "text-good" : "text-ink"}`}

@@ -1,6 +1,9 @@
 import { auth } from "@/auth";
 import { getPortfolioSummary, getNetWorthHistory } from "@/lib/portfolio";
-import { getMonthCashflow, hasTransactionToday } from "@/lib/transactions";
+import { getMonthCashflow, getRangeCashflow } from "@/lib/transactions";
+import { getRecordingStatus } from "@/lib/recordingStatus";
+import { monthComparisonRange } from "@/lib/period";
+import { getDisplayName } from "@/lib/profile";
 import { computePortfolioHealth } from "@/lib/portfolioIntelligence";
 import { formatMYR, formatShare, formatPct } from "@/lib/format";
 import CountUpValue from "@/components/CountUpValue";
@@ -43,12 +46,18 @@ function greeting() {
   return "晚上好";
 }
 
+/** 2026-09-04 → 9/4 */
+function shortDate(d: string) {
+  return `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+}
+
 export default async function OverviewPage() {
   const session = await auth();
   const userId = session!.user.id;
   const summary = await getPortfolioSummary(userId);
   const health = computePortfolioHealth(summary);
-  const displayName = session!.user.name ?? session!.user.email?.split("@")[0];
+  // 读资料库而不是 session：JWT 是登入那一刻的快照，改了名字不会立刻生效（P0-07）
+  const displayName = await getDisplayName(userId);
 
   // 最近一次抓到报价的时间：取所有持仓 priceAsOf 的最大值，给「更新报价」按钮显示
   const priceTimes = summary.holdings
@@ -67,7 +76,9 @@ export default async function OverviewPage() {
     history = {
       range: h.range,
       changeMYR: h.changeMYR,
-      changePct: h.changePct,
+      contributionMYR: h.contributionMYR,
+      returnMYR: h.returnMYR,
+      returnPct: h.returnPct,
       points: h.points.map((p) => ({
         date: p.date.toISOString(),
         netWorthMYR: p.netWorthMYR,
@@ -84,26 +95,32 @@ export default async function OverviewPage() {
   let cashflowTotals: { income: number; expense: number; invest: number; net: number } | null = null;
   let recentItems: Awaited<ReturnType<typeof getMonthCashflow>>["items"] = [];
   let expenseDeltaPct: number | null = null;
-  let recordedToday = true; // 降级时不显示催记账横幅
+  let comparisonPartial = false;
+  let recording: Awaited<ReturnType<typeof getRecordingStatus>> | null = null; // 降级时不显示催记账横幅
   try {
     // 上月一并取回来算环比。单个绝对值不构成信息 ——「支出 RM 3,833」要配上
     // 「比上月多 12%」才知道该不该在意。
-    const prevMonth = now.getMonth() === 0 ? 12 : now.getMonth();
-    const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-    const [cf, prevCf, recorded] = await Promise.all([
+    // 同期比较：本月还没过完时，只能拿 9/1–9/25 去比 8/1–8/25（P0-03）。
+    // 从前拿「9 月前 25 天」比「完整的 8 月」，算出「支出 -88.3%」——
+    // 那不是省了钱，那是月份还没过完。
+    const cmp = monthComparisonRange(now);
+    comparisonPartial = cmp.partial;
+    const [cf, thisPeriod, lastPeriod, recorded] = await Promise.all([
       getMonthCashflow(userId, now.getFullYear(), now.getMonth() + 1),
-      getMonthCashflow(userId, prevYear, prevMonth),
-      hasTransactionToday(userId),
+      getRangeCashflow(userId, cmp.current.start, cmp.current.end),
+      getRangeCashflow(userId, cmp.previous.start, cmp.previous.end),
+      getRecordingStatus(userId),
     ]);
     cashflowTotals = cf.totals;
+    // 首页「最近交易」与收支页看同一份资料、同一套分类规则（P0-04）
     recentItems = cf.items.slice(0, 5);
-    recordedToday = recorded;
+    recording = recorded;
     // 上月支出为 0 时不给环比。除以 0 本来就得不到有意义的百分比，更重要的是：
     // 支出 0 的月份几乎都代表「那个月没记账」而不是「那个月没花钱」，
     // 拿它当基准算出来的「+∞%」或任何数字都是在拿没记账的月份跟记了账的月份比。
     // （这台机器上 7 月就是这样：有真实投资回填，但收支从 8 月才开始记。）
-    if (prevCf.totals.expense > 0) {
-      expenseDeltaPct = (cf.totals.expense - prevCf.totals.expense) / prevCf.totals.expense;
+    if (lastPeriod.expense > 0) {
+      expenseDeltaPct = (thisPeriod.expense - lastPeriod.expense) / lastPeriod.expense;
     }
   } catch {
     cashflowTotals = null;
@@ -119,7 +136,10 @@ export default async function OverviewPage() {
 
   const cashValueMYR = summary.allocation.find((a) => a.assetType === "CASH")?.valueMYR ?? 0;
   const portfolioValueMYR = summary.netWorthMYR - cashValueMYR;
-  const countCash = summary.holdings.length;
+  // 现金户口不是持仓（P0-09）。从前「共 6 笔」里混著 PUBLIC BANK / TNG /
+  // moomoo Cash —— 那是三个钱包，不是三个投资标的。
+  const investmentHoldings = summary.holdings.filter((h) => h.assetType !== "CASH");
+  const cashHoldings = summary.holdings.filter((h) => h.assetType === "CASH");
   // 只有现金、没有投资标的时，组合分析那几块没有东西可分析：
   // 分散度会把「只有一类资产」算成集中度风险，健康分变成对记账使用者的无意义扣分。
   const hasInvestments = summary.holdings.some((h) => h.assetType !== "CASH");
@@ -143,10 +163,7 @@ export default async function OverviewPage() {
     return (
       <div className="flex flex-col gap-8">
         <div className="animate-in">
-          <div className="text-xs font-medium tracking-widest text-ai-accent uppercase">
-            Investment OS
-          </div>
-          <h1 className="mt-1 text-2xl font-semibold text-ink sm:text-3xl">
+          <h1 className="text-2xl font-semibold text-ink sm:text-3xl">
             {displayName ? `${greeting()}，${displayName}` : greeting()}
           </h1>
           <p className="mt-2 text-sm text-ink-secondary">
@@ -188,7 +205,7 @@ export default async function OverviewPage() {
                 <p className="mt-0.5 text-sm text-ink-secondary">
                   手动记一笔，或直接汇入银行对帐单（PDF / CSV）把整个月补齐。
                 </p>
-                <Link href="/cashflow?add=1" className="mt-1 inline-block text-sm text-ai-accent">
+                <Link href="/?add=1" className="mt-1 inline-block text-sm text-ai-accent">
                   记第一笔 →
                 </Link>
               </div>
@@ -210,25 +227,41 @@ export default async function OverviewPage() {
         style={{ animationDelay: `${SECTION_DELAY[0]}ms` }}
       >
         <div>
-          <div className="text-xs font-medium tracking-widest text-ai-accent uppercase">
-            Investment OS
-          </div>
-          <h1 className="mt-1 text-2xl font-semibold text-ink sm:text-3xl">
+          <h1 className="text-2xl font-semibold text-ink sm:text-3xl">
             {displayName ? `${greeting()}，${displayName}` : greeting()}
           </h1>
         </div>
         <RefreshPricesButton lastPriceAt={lastPriceAt} />
       </div>
 
-      {/* 今日未记账提醒（与 Cowork 23:00 定时提醒双保险） */}
-      {!recordedToday && (
+      {/* 断记提醒（P1-06）：天数从最后一笔交易日期算，不写死（与 Cowork 23:00 定时提醒双保险） */}
+      {recording && recording.daysSinceLast !== 0 && (
         <Link
-          href="/cashflow?add=1"
+          href="/?add=1"
           className="card card-interactive animate-in flex flex-col gap-1 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
           style={{ borderColor: "color-mix(in srgb, var(--portfolio-accent) 45%, var(--line))" }}
         >
-          <span className="text-sm text-ink">今天还没记账 · 花了什么、进了什么，顺手记一笔</span>
+          <span className="text-sm text-ink">
+            {recording.daysSinceLast === null
+              ? "还没有任何记录 · 记下第一笔，之后每天回来几秒就好"
+              : recording.daysSinceLast === 1
+                ? "今天还没记账 · 花了什么、进了什么，顺手记一笔"
+                : `已 ${recording.daysSinceLast} 天没记账（上次 ${shortDate(recording.lastTxDate!)}）· 想起哪笔补哪笔`}
+          </span>
           <span className="shrink-0 text-sm font-medium text-portfolio-accent-deep">+ 记一笔</span>
+        </Link>
+      )}
+
+      {recording?.importGapFrom && (
+        <Link
+          href="/cashflow?import=1"
+          className="card card-interactive animate-in flex flex-col gap-1 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+          style={{ borderColor: "color-mix(in srgb, var(--warning) 45%, var(--line))" }}
+        >
+          <span className="text-sm text-ink">
+            {shortDate(recording.importGapFrom)} 起的对账单还没导入 · 上个月的月结单应该已经出了
+          </span>
+          <span className="shrink-0 text-sm font-medium text-ink">导入 →</span>
         </Link>
       )}
 
@@ -300,9 +333,9 @@ export default async function OverviewPage() {
             />
           </div>
           <div>
-            <div className="text-xs text-ink-muted">持仓 / 户口</div>
+            <div className="text-xs text-ink-muted">持仓 / 现金户口</div>
             <div className="mt-1 text-lg font-medium text-ink font-mono tabular-nums">
-              {summary.holdings.length} · {summary.allocationByAccount.length}
+              {investmentHoldings.length} · {cashHoldings.length}
             </div>
           </div>
         </div>
@@ -350,6 +383,9 @@ export default async function OverviewPage() {
                           {formatPct(expenseDeltaPct)}
                         </span>
                       )}
+                      {expenseDeltaPct !== null && comparisonPartial && (
+                        <span className="text-xs text-ink-muted">截至今日</span>
+                      )}
                     </span>
                     <Value value={cashflowTotals.expense} className="text-sm text-ink" />
                   </div>
@@ -379,7 +415,9 @@ export default async function OverviewPage() {
         <div className="card animate-in p-6" style={{ animationDelay: `${SECTION_DELAY[4]}ms` }}>
           <div className="mb-5 flex items-baseline justify-between">
             <div className="text-sm font-medium text-ink">持仓明细</div>
-            <div className="text-xs text-ink-muted">共 {countCash} 笔</div>
+            <div className="text-xs text-ink-muted">
+              持仓 {investmentHoldings.length} 笔 · 现金 {cashHoldings.length} 个户口
+            </div>
           </div>
           <HoldingsGrid holdings={summary.holdings} netWorthMYR={summary.netWorthMYR} />
         </div>

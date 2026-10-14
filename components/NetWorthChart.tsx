@@ -17,7 +17,10 @@ export type History = {
   range: string;
   points: HistoryPoint[];
   changeMYR: number | null;
-  changePct: number | null;
+  /** 自己存进去的钱（成本增量）—— 不是投资赚的 */
+  contributionMYR: number | null;
+  returnMYR: number | null;
+  returnPct: number | null;
 };
 
 const RANGES = ["1M", "3M", "YTD", "1Y", "MAX"] as const;
@@ -148,13 +151,34 @@ export default function NetWorthChart({ initial }: { initial: History | null }) 
             {r}
           </button>
         ))}
-        {history?.changeMYR !== null && history?.changeMYR !== undefined && (
-          <span className="ml-2 text-xs text-ink-secondary">
-            区间 <Value value={history.changeMYR} colorizeSign className="font-medium" />{" "}
-            (<Value value={history.changePct} kind="percent" colorizeSign className="font-medium" />)
-          </span>
-        )}
       </div>
+
+      {/* 净投入与投资收益分开报（P0-05）。合在一起报「区间 +RM 2,866 (+19.7%)」
+          的问题是：那 19.7% 里绝大部分是自己存进去的钱，看起来却像是赚的。 */}
+      {history?.changeMYR !== null && history?.changeMYR !== undefined && (
+        <div className="mt-4 grid grid-cols-2 gap-4 border-t border-line pt-4">
+          <div>
+            <div className="text-xs text-ink-muted">净投入</div>
+            <Value
+              value={history.contributionMYR ?? 0}
+              colorizeSign={false}
+              className="mt-0.5 block text-sm font-medium text-ink"
+            />
+          </div>
+          <div>
+            <div className="text-xs text-ink-muted">投资收益</div>
+            <div className="mt-0.5 text-sm font-medium">
+              <Value value={history.returnMYR ?? 0} colorizeSign />
+              {history.returnPct !== null && history.returnPct !== undefined && (
+                <>
+                  {" "}
+                  (<Value value={history.returnPct} kind="percent" colorizeSign />)
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

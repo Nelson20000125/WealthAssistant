@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { getPortfolioSummary } from "@/lib/portfolio";
 import { getMarketBrief } from "@/lib/marketBrief";
 import { computePortfolioHealth, generateInsights, generateSuggestions } from "@/lib/portfolioIntelligence";
+import { getFinancialSummary } from "@/lib/financialSummary";
 import { matchNewsRelevance } from "@/lib/newsRelevance";
 import { peekAiQuota } from "@/lib/aiUsage";
 import HealthScoreRing from "@/components/HealthScoreRing";
@@ -29,14 +30,17 @@ const SECTION_DELAY = [0, 60, 120, 180, 240, 300, 360];
 
 export default async function AdvisorPage() {
   const session = await auth();
-  const [summary, rawNews, quota] = await Promise.all([
+  const [summary, rawNews, quota, financial] = await Promise.all([
     getPortfolioSummary(session!.user.id),
     getMarketBrief(8),
     peekAiQuota(session!.user.id),
+    getFinancialSummary(session!.user.id),
   ]);
   const health = computePortfolioHealth(summary);
-  const insights = generateInsights(summary, health);
-  const suggestions = generateSuggestions(health);
+  // 现金够不够撑，要拿真实月支出算，不能只看资产比例（P0-06）
+  const emergency = { ...financial.emergencyFund, months: financial.emergencyFundMonths };
+  const insights = generateInsights(summary, health, emergency);
+  const suggestions = generateSuggestions(health, financial.emergencyFund);
 
   // 抓宽一点（8 条）再比对持仓关联，把相关的排到前面，最后只显示 3 条——
   // 不然真正相关的新闻可能因为不在最新 3 条里而被漏掉。
@@ -47,10 +51,10 @@ export default async function AdvisorPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="animate-in" style={{ animationDelay: `${SECTION_DELAY[0]}ms` }}>
-        <div className="text-xs font-medium tracking-widest text-ai-accent uppercase">
-          Portfolio Intelligence
-        </div>
-        <h1 className="mt-1 text-3xl font-semibold text-ink">你的私人对冲基金分析师</h1>
+        <h1 className="text-3xl font-semibold text-ink">我的投资</h1>
+        <p className="mt-1 text-sm text-ink-muted">
+          先看现金够不够撑，再谈要不要加仓
+        </p>
       </div>
 
       {/* 主栏（组合健康 + AI 洞察 + 对话）+ 侧栏（市场情报 + 研究中心），

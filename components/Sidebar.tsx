@@ -42,7 +42,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string | null }) {
         })}
       </nav>
       <Link
-        href="/cashflow?add=1"
+        href={`${pathname}?add=1`}
         className="mt-4 flex items-center justify-center gap-1.5 rounded-md bg-portfolio-accent px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
       >
         + 记一笔

@@ -6,11 +6,14 @@ import {
   getYearCashflow,
   listCategories,
   listOutstandingReimbursements,
+  parseSearchParams,
+  searchTransactions,
 } from "@/lib/transactions";
-import { formatMYR } from "@/lib/format";
+import { formatMYR, formatShare } from "@/lib/format";
 import Value from "@/components/Value";
 import DonutChart from "@/components/DonutChart";
 import CashflowManager from "@/components/CashflowManager";
+import CashflowSearch from "@/components/CashflowSearch";
 import CashBalanceCards from "@/components/CashBalanceCards";
 import OutstandingReimbursements from "@/components/OutstandingReimbursements";
 import { getCashPools, pickDefaultCashPool } from "@/lib/cashBalance";
@@ -38,7 +41,7 @@ function monthKey(y: number, m: number) {
 export default async function CashflowPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; add?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const session = await auth();
   const userId = session!.user.id;
@@ -47,8 +50,9 @@ export default async function CashflowPage({
   const [yStr, mStr] = (params.m ?? monthKey(now.getFullYear(), now.getMonth() + 1)).split("-");
   const year = Number(yStr);
   const month = Number(mStr);
+  const filters = parseSearchParams(params);
 
-  const [cashflow, yearData, categories, holdings, accounts, cashPools, outstanding] = await Promise.all([
+  const [cashflow, yearData, categories, holdings, accounts, cashPools, outstanding, search] = await Promise.all([
     getMonthCashflow(userId, year, month),
     getYearCashflow(userId, year),
     listCategories(userId),
@@ -74,6 +78,7 @@ export default async function CashflowPage({
     }),
     getCashPools(userId),
     listOutstandingReimbursements(userId),
+    filters ? searchTransactions(userId, filters) : null,
   ]);
 
   // 有实际数据的月份数。少于 3 个月就不画年度对比图 ——
@@ -105,24 +110,52 @@ export default async function CashflowPage({
   const stats = [
     { label: "收入", value: cashflow.totals.income, cls: "text-good" },
     { label: "支出", value: cashflow.totals.expense, cls: "text-ink" },
-    { label: "投资", value: cashflow.totals.invest, cls: "text-portfolio-accent-deep" },
   ];
+
+  const header = (
+    <div className="animate-in">
+      <div className="text-xs font-medium tracking-widest text-ai-accent uppercase">Cashflow</div>
+      <h1 className="mt-1 text-3xl font-semibold text-ink">收支记录</h1>
+    </div>
+  );
+  const listProps = {
+    categories,
+    holdings,
+    accounts,
+    outstanding,
+    defaultCashHoldingId: pickDefaultCashPool(cashPools),
+  };
+  const searchBar = <CashflowSearch filters={filters} categories={categories} pools={cashPools} />;
+
+  // 搜索模式（P1-05）：跨月份的结果取代当月内容，月份切换 / 图表 / 余额在这里都不相关
+  if (search) {
+    return (
+      <div className="flex flex-col gap-6">
+        {header}
+        {searchBar}
+        <div className="card p-4 text-sm text-ink-secondary">
+          找到 <span className="font-medium text-ink">{search.items.length}</span> 笔
+          {search.truncated && "（只显示最新 500 笔，请加条件缩小范围）"}
+          <span className="ml-3 font-mono tabular-nums">
+            支出 {formatMYR(search.totals.expense)} · 收入 <span className="text-good">{formatMYR(search.totals.income)}</span>
+          </span>
+        </div>
+        <CashflowManager
+          searching
+          items={search.items.map((t) => ({ ...t, date: t.date.toISOString() }))}
+          dayTotals={search.byDay}
+          {...listProps}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="animate-in">
-        <div className="text-xs font-medium tracking-widest text-ai-accent uppercase">Cashflow</div>
-        <h1 className="mt-1 text-3xl font-semibold text-ink">收支记录</h1>
-      </div>
+      {header}
 
-      {/* 现金余额放在月份汇总之前：余额是「当下有多少」，与所选月份无关；
-          下面那张卡才是「这个月流进流出多少」 */}
-      <CashBalanceCards pools={cashPools} accounts={accounts} />
-
-      {/* 紧跟在余额后面：垫出去的钱不在余额里、也不在支出里，这是它唯一的落脚处 */}
-      <OutstandingReimbursements items={outstanding} />
-
-      {/* 月份切换 + 四格汇总 */}
+      {/* P1-03 层级：月份切换 + 汇总 → 流水（按日分组）→ 户口余额 chips → 其余分析。
+          预算进度本该在汇总与流水之间，等 Monthly Budget（P2，要 schema）做了再插进来 */}
       <div className="card animate-in p-6">
         <div className="flex items-center justify-between">
           <Link href={`/cashflow?m=${prev}`} className="rounded-md px-2 py-1 text-sm text-ink-secondary hover:bg-page hover:text-ink">←</Link>
@@ -144,7 +177,18 @@ export default async function CashflowPage({
               <Value value={cashflow.totals.net} kind="currency-compact" colorizeSign />
             </div>
           </div>
+          <div className="text-center">
+            <div className="text-xs text-ink-muted">储蓄率</div>
+            <div className="mt-1 text-lg font-medium font-mono tabular-nums text-ink">
+              {cashflow.totals.savingsRate === null ? "—" : formatShare(cashflow.totals.savingsRate)}
+            </div>
+          </div>
         </div>
+        {cashflow.totals.invest > 0 && (
+          <div className="mt-3 text-center text-xs text-ink-muted">
+            另有投资转出 <span className="font-mono tabular-nums text-portfolio-accent-deep">{formatMYR(cashflow.totals.invest)}</span>，不算支出
+          </div>
+        )}
         {cashflow.fxMissingCount > 0 && (
           <div className="mt-3 text-xs text-warning">
             有 {cashflow.fxMissingCount} 笔非 MYR 记录因缺汇率未计入汇总
@@ -152,7 +196,23 @@ export default async function CashflowPage({
         )}
       </div>
 
-      {/* 图表放前面：交易列表笔数一多会把图表推到最下面，要滚很久才看得到 */}
+      {/* 流水：按日分组，每组右侧当天小计 */}
+      <div className="animate-in flex flex-col gap-4">
+        {searchBar}
+        <CashflowManager
+          items={cashflow.items.map((t) => ({ ...t, date: t.date.toISOString() }))}
+          dayTotals={cashflow.byDay}
+          autoImport={params.import === "1"}
+          {...listProps}
+        />
+      </div>
+
+      <CashBalanceCards pools={cashPools} accounts={accounts} />
+
+      {/* 垫出去的钱不在余额里、也不在支出里，这是它唯一的落脚处 */}
+      <OutstandingReimbursements items={outstanding} />
+
+      {/* 分析类放最后：先看流水，要细看再往下 */}
       <div className="grid grid-cols-1 gap-8 sm:grid-cols-2">
         <div className="animate-in">
           <div className="card p-6">
@@ -216,18 +276,6 @@ export default async function CashflowPage({
         </div>
       </div>
 
-      {/* 流水 + 记一笔 */}
-      <div className="animate-in">
-        <CashflowManager
-          items={cashflow.items.map((t) => ({ ...t, date: t.date.toISOString() }))}
-          categories={categories}
-          holdings={holdings}
-          accounts={accounts}
-          outstanding={outstanding}
-          autoOpen={params.add === "1"}
-          defaultCashHoldingId={pickDefaultCashPool(cashPools)}
-        />
-      </div>
     </div>
   );
 }
