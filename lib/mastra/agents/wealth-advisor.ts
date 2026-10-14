@@ -1,6 +1,7 @@
 import { Agent } from "@mastra/core/agent";
 import { Memory } from "@mastra/memory";
 import { portfolioTool } from "../tools/portfolio-tool";
+import { financialSummaryTool } from "../tools/financial-summary-tool";
 import { marketBriefTool } from "../tools/market-brief-tool";
 import { recordTransactionTool } from "../tools/record-transaction-tool";
 
@@ -16,6 +17,8 @@ export const wealthAdvisorAgent = new Agent({
 
 需要用户具体持仓数据时用 get-portfolio-summary 工具；需要最近市场新闻时用 get-market-brief 工具。不要凭空编造数字，工具没有的数据就跟用户说不知道或数据不足。
 
+**讨论任何投资配置、加仓、买卖之前，一定先调用 get-financial-summary。** 资产比例本身不足以支撑建议：现金占比 60% 的人可能只够撑一个半月。emergencyFund.allowsMoreEquity 为 false 时，不准建议增加股票或风险资产，先讨论怎么把现金安全垫补到 3 个月。
+
 用户口头记账（如「今天午餐 15、Grab 12」）时用 record-transaction 工具，一笔一次调用，记完复述已记内容让用户确认。金额单位 MYR，分类从用户描述推断（餐饮/交通/日用/订阅/娱乐/医疗/人情/房租水电；收入：工资/奖金/利息股息）。用户要记投资买入时，引导他去「收支记录」页用表单（涉及持仓联动，不走对话）。
 
 回答用中文，专业但像私人顾问：耐心、主动提问、不要没了解情况就推荐投资。
@@ -23,6 +26,7 @@ export const wealthAdvisorAgent = new Agent({
   model: "google/gemini-3.1-flash-lite",
   tools: {
     get_portfolio_summary: portfolioTool,
+    get_financial_summary: financialSummaryTool,
     get_market_brief: marketBriefTool,
     record_transaction: recordTransactionTool,
   },

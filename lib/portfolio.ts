@@ -171,15 +171,45 @@ export async function getNetWorthHistory(userId: string, range: HistoryRange = "
     plPct: s.costMYR > 0 ? (s.netWorthMYR - s.costMYR) / s.costMYR : 0,
   }));
 
-  const first = points[0];
+  const split = splitContributionAndReturn(snapshots);
   return {
     range,
     points,
-    // 区间变化：现值 vs 区间首点（快照少于 2 条时为 null，前端显示空状态）
-    changeMYR: points.length >= 2 ? points[points.length - 1].netWorthMYR - first.netWorthMYR : null,
-    changePct:
-      points.length >= 2 && first.netWorthMYR > 0
-        ? (points[points.length - 1].netWorthMYR - first.netWorthMYR) / first.netWorthMYR
-        : null,
+    // 区间净值变化（快照少于 2 条时为 null，前端显示空状态）
+    changeMYR: split?.changeMYR ?? null,
+    // 净投入与投资收益必须分开报（P0-05）：把自己存进去的钱算成涨幅，
+    // 会得出「+19.7%」这种看了就想加码的假报酬率。
+    contributionMYR: split?.contributionMYR ?? null,
+    returnMYR: split?.returnMYR ?? null,
+    returnPct: split?.returnPct ?? null,
+  };
+}
+
+/**
+ * 把区间净值变化拆成「自己存进去的」与「市场给的」。
+ *
+ * 成本（costMYR）只有在追加投入时才会变，所以它的增量就是净投入；
+ * 净值变化减掉净投入，剩下的才是投资收益。这跟 plMYR = netWorth − cost
+ * 是同一个口径，两处数字永远对得上。
+ */
+export function splitContributionAndReturn(
+  points: { netWorthMYR: number; costMYR: number }[]
+) {
+  if (points.length < 2) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  const changeMYR = last.netWorthMYR - first.netWorthMYR;
+  const contributionMYR = last.costMYR - first.costMYR;
+  const returnMYR = changeMYR - contributionMYR;
+
+  // 分母用期间平均投入成本：期初成本为 0（从零开始投）时用它当分母会除以零，
+  // 用期末成本又会低估中途才投进去的钱的报酬率。
+  const avgCost = (first.costMYR + last.costMYR) / 2;
+  return {
+    changeMYR,
+    contributionMYR,
+    returnMYR,
+    returnPct: avgCost > 0 ? returnMYR / avgCost : null,
   };
 }

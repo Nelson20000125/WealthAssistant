@@ -1,15 +1,19 @@
 // compact 数字用自己手写的逻辑，不用 Intl 的 notation:"compact"——
 // Node（server）和浏览器（client hydration）内建的 ICU 版本对 compact 数字的四舍五入/去尾零
-// 行为不一致（比如 14025.95 一个给 "RM 14.0K" 一个给 "RM 14K"），会触发 hydration mismatch。
+// 行为不一致（比如 14031.20 一个给 "RM 14.0K" 一个给 "RM 14K"），会触发 hydration mismatch。
 // 纯数学换算 + toFixed 在任何 JS 引擎里输出都完全一致。
 function formatCompactMYR(value: number) {
   const sign = value < 0 ? "-" : "";
   const abs = Math.abs(value);
   const trim = (n: number) => n.toFixed(1).replace(/\.0$/, "");
 
-  if (abs >= 1_000_000) return `${sign}RM${trim(abs / 1_000_000)}M`;
-  if (abs >= 1_000) return `${sign}RM${trim(abs / 1_000)}K`;
-  return `${sign}RM${Math.round(abs)}`;
+  // 用不换行空格跟 Intl 的完整格式（"RM 812.40"）逐字对齐。同一画面上
+  // 出现 "RM812" 和 "RM 812.40" 会像两套系统的数字（P0-10）；而空格必须是
+  // NBSP 而非普通空格，否则窄屏会把 "RM" 和数字断成两行。
+  const RM = "RM ";
+  if (abs >= 1_000_000) return `${sign}${RM}${trim(abs / 1_000_000)}M`;
+  if (abs >= 1_000) return `${sign}${RM}${trim(abs / 1_000)}K`;
+  return `${sign}${RM}${Math.round(abs)}`;
 }
 
 export function formatMYR(value: number, compact = false) {

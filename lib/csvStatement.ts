@@ -1,4 +1,5 @@
 import type { ParsedStatement, StatementTransaction } from "@/lib/pdfStatement";
+import { formatMYR } from "@/lib/format";
 
 // Public Bank (PBE) 网银 CSV 汇出解析。回传跟 PDF 版同一个 ParsedStatement 契约，
 // 所以 parse/confirm 两阶段管线、去重、ImportBatch、预览 UI 全部沿用，不必重做。
@@ -135,7 +136,7 @@ export function parsePBECsv(fileBuffer: Buffer): ParsedStatement {
 
   // 倒推完剩下的就是本期期初余额，拿来做健全性检查
   if (currentBalance !== null) {
-    warnings.push(`倒推所得本期期初余额：RM ${(Math.round(running * 100) / 100).toFixed(2)}（可与上期结余核对）`);
+    warnings.push(`倒推所得本期期初余额：${formatMYR(Math.round(running * 100) / 100)}（可与上期结余核对）`);
   }
 
   // 汇入端预期由旧到新，翻转回来

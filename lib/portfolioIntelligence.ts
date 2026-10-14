@@ -42,6 +42,42 @@ export function riskScore(
   return clamp(score);
 }
 
+/**
+ * 应急金月数 = 可动用现金 ÷ 月均支出（P0-06）。
+ *
+ * 「现金占比 60% 偏高」这句话对一个月支出 RM7,124、手上只有 RM10.4k 的人
+ * 是危险的建议 —— 那笔现金其实只够撑一个半月。占比讲的是资产结构，
+ * 够不够活下去要拿真实现金流来除。
+ */
+export function emergencyFundMonths(
+  availableCashMYR: number,
+  avgMonthlyExpenseMYR: number
+): number | null {
+  // 月支出为 0 通常代表「那几个月没记账」，不是「没花钱」。
+  // 回 Infinity 会让顾问说「现金够用 999 个月」——那是在拿没有的资料撒谎。
+  if (avgMonthlyExpenseMYR <= 0) return null;
+  return availableCashMYR / avgMonthlyExpenseMYR;
+}
+
+export type EmergencyFundLevel = "unknown" | "critical" | "ok" | "excess";
+export type EmergencyFundVerdict = {
+  level: EmergencyFundLevel;
+  /** false = 现金垫还不够，任何「加仓股票」的建议都不该出现 */
+  allowsMoreEquity: boolean;
+};
+
+/**
+ * 门槛用通行的 3／6／12 个月。低于 3 个月就锁住加仓建议 ——
+ * 这是记账模块与投资模块真正接起来的那一条线。
+ */
+export function emergencyFundVerdict(months: number | null): EmergencyFundVerdict {
+  if (months === null) return { level: "unknown", allowsMoreEquity: false };
+  if (months < 3) return { level: "critical", allowsMoreEquity: false };
+  if (months < 6) return { level: "ok", allowsMoreEquity: true };
+  if (months <= 12) return { level: "ok", allowsMoreEquity: true };
+  return { level: "excess", allowsMoreEquity: true };
+}
+
 export type MarketExposureLabel = "偏美股" | "偏本地" | "均衡";
 
 /**
@@ -102,10 +138,38 @@ export type Insight = { tone: InsightTone; category: string; text: string };
  * 模版化生成 insight 文案——所有措辞都由分数决定，同样的持仓永远生成同样的话，
  * 不经过 LLM，避免顾问页面出现幻觉数字。
  */
-export function generateInsights(summary: PortfolioSummary, health: PortfolioHealth): Insight[] {
+export function generateInsights(
+  summary: PortfolioSummary,
+  health: PortfolioHealth,
+  emergency: EmergencyFundVerdict & { months: number | null } = {
+    ...emergencyFundVerdict(null),
+    months: null,
+  }
+): Insight[] {
   const insights: Insight[] = [];
 
-  if (health.cashAllocationScore < 60) {
+  // 现金垫不足时，「现金占比偏高」这句话是错的方向 —— 先讲还能撑几个月（P0-06）
+  if (emergency.level === "critical" && emergency.months !== null) {
+    insights.push({
+      tone: "flag",
+      category: "现金安全垫",
+      text: `以近三个月的真实支出计算，手上的现金只够 ${emergency.months.toFixed(1)} 个月，低于 3 个月的安全线。在补足之前，先别把现金挪去投资。`,
+    });
+  } else if (emergency.months !== null) {
+    insights.push({
+      tone: emergency.level === "excess" ? "neutral" : "healthy",
+      category: "现金安全垫",
+      text:
+        emergency.level === "excess"
+          ? `现金够撑 ${emergency.months.toFixed(1)} 个月，超过 12 个月的部分放著不动是有机会成本的。`
+          : `现金够撑 ${emergency.months.toFixed(1)} 个月，安全垫是足的。`,
+    });
+  }
+
+  // 现金垫还没补足时，占比这条不发 —— 两条并排会互相打架
+  if (emergency.level === "critical") {
+    // 跳过占比评语
+  } else if (health.cashAllocationScore < 60) {
     insights.push({
       tone: "flag",
       category: "现金配置",
@@ -181,10 +245,16 @@ export type Suggestion = { icon: SuggestionIcon; label: string };
  * 建议 chips 同样是规则引擎产物：分数触发对应建议，没有触发任何风险项时给出「维持」类建议，
  * 保底凑到至少 3 条，不留空。
  */
-export function generateSuggestions(health: PortfolioHealth): Suggestion[] {
+export function generateSuggestions(
+  health: PortfolioHealth,
+  emergency: EmergencyFundVerdict = emergencyFundVerdict(null)
+): Suggestion[] {
   const suggestions: Suggestion[] = [];
 
-  if (health.cashAllocationScore < 60) {
+  if (!emergency.allowsMoreEquity && emergency.level === "critical") {
+    // 现金不够撑三个月时，第一件事是补现金，不是加仓（P0-06）
+    suggestions.push({ icon: "shield", label: "先把现金安全垫补到 3 个月" });
+  } else if (health.cashAllocationScore < 60) {
     suggestions.push({ icon: "trend", label: "提高股票/ETF 配置比例" });
   }
   if (health.diversificationScore < 50) {

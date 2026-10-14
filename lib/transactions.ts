@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/app/generated/prisma/client";
 
 // 记账核心逻辑（设计见 bookkeeping-design.md）。
 // INVEST 联动 = 方案 B：记一笔投资，同一事务内更新目标持仓（加权平均成本）
@@ -377,25 +378,151 @@ function countableAmount(t: CountableTx): number {
   return t.amount;
 }
 
+/**
+ * 任意日期区间的收支汇总（P0-03 的同期比较用）。
+ *
+ * 走的是跟 getMonthCashflow 一模一样的 countsInTotals / countableAmount 规则 ——
+ * 比较用一套口径、列表用另一套，是让使用者以为系统数字对不上的最快方法（P0-04）。
+ * end 是开区间。
+ */
+export async function getRangeCashflow(userId: string, start: Date, end: Date) {
+  const [transactions, fxRates] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { userId, date: { gte: start, lt: end } },
+      include: { category: true },
+    }),
+    prisma.fxRate.findMany(),
+  ]);
+
+  const totals = { income: 0, expense: 0, invest: 0, transfer: 0, fxMissingCount: 0 };
+  for (const t of transactions) {
+    const rate = rateFor(t.currency, fxRates);
+    if (rate === null) {
+      totals.fxMissingCount++;
+      continue;
+    }
+    if (!countsInTotals(t)) continue;
+    const myr = countableAmount(t) * rate;
+    if (t.type === "INCOME") totals.income += myr;
+    if (t.type === "EXPENSE") totals.expense += myr;
+    if (t.type === "INVEST") totals.invest += myr;
+    if (t.type === "TRANSFER") totals.transfer += myr;
+  }
+  return { ...totals, net: totals.income - totals.expense };
+}
+
+const LIST_INCLUDE = {
+  category: true,
+  holding: { select: { name: true, symbol: true } },
+} as const;
+
+type ListTx = Awaited<ReturnType<typeof listTransactions>>[number];
+
+function listTransactions(where: Prisma.TransactionWhereInput, take?: number) {
+  return prisma.transaction.findMany({
+    where,
+    include: LIST_INCLUDE,
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    take,
+  });
+}
+
 /** 某月的流水 + 汇总（金额统一折算 MYR；汇率缺失的笔数单独返回，不静默吞掉） */
 export async function getMonthCashflow(userId: string, year: number, month: number) {
   const start = new Date(Date.UTC(year, month - 1, 1));
   const end = new Date(Date.UTC(year, month, 1));
   const [transactions, fxRates] = await Promise.all([
-    prisma.transaction.findMany({
-      where: { userId, date: { gte: start, lt: end } },
-      include: {
-        category: true,
-        holding: { select: { name: true, symbol: true } },
-      },
-      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    }),
+    listTransactions({ userId, date: { gte: start, lt: end } }),
     prisma.fxRate.findMany(),
   ]);
+  return { year, month, ...summarize(transactions, fxRates) };
+}
 
+export type SearchFilters = {
+  q?: string;
+  type?: TxType;
+  categoryId?: string;
+  /** 现金池（Holding）id，转出、转入侧都算 */
+  poolId?: string;
+  min?: number;
+  max?: number;
+  /** YYYY-MM-DD，两端都包含 */
+  from?: string;
+  to?: string;
+};
+
+const TX_TYPES: TxType[] = ["INCOME", "EXPENSE", "INVEST", "TRANSFER"];
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+// ponytail: 结果上限 500 笔，个人帐够用；真的不够再做分页
+const SEARCH_LIMIT = 500;
+
+/** 网址参数 → 搜索条件。没有任何有效条件时回 null（页面照常显示当月） */
+export function parseSearchParams(params: Record<string, string | undefined>): SearchFilters | null {
+  const f: SearchFilters = {};
+  const q = params.q?.trim();
+  if (q) f.q = q;
+  if (TX_TYPES.includes(params.type as TxType)) f.type = params.type as TxType;
+  if (params.cat) f.categoryId = params.cat;
+  if (params.pool) f.poolId = params.pool;
+  for (const k of ["min", "max"] as const) {
+    const n = params[k] ? Number(params[k]) : NaN;
+    if (Number.isFinite(n)) f[k] = n;
+  }
+  for (const k of ["from", "to"] as const) {
+    const v = params[k];
+    if (v && DAY_RE.test(v) && !Number.isNaN(Date.parse(v))) f[k] = v;
+  }
+  return Object.keys(f).length > 0 ? f : null;
+}
+
+/** 跨月份搜流水（P1-05）。汇总走 summarize，跟月报同一口径 */
+export async function searchTransactions(userId: string, f: SearchFilters) {
+  const and: Prisma.TransactionWhereInput[] = [{ userId }];
+  if (f.type) and.push({ type: f.type });
+  if (f.categoryId) and.push({ categoryId: f.categoryId });
+  if (f.poolId) and.push({ OR: [{ cashHoldingId: f.poolId }, { counterCashHoldingId: f.poolId }] });
+  if (f.min !== undefined) and.push({ amount: { gte: f.min } });
+  if (f.max !== undefined) and.push({ amount: { lte: f.max } });
+  if (f.from) and.push({ date: { gte: new Date(`${f.from}T00:00:00.000Z`) } });
+  if (f.to) {
+    const end = new Date(`${f.to}T00:00:00.000Z`);
+    end.setUTCDate(end.getUTCDate() + 1);
+    and.push({ date: { lt: end } });
+  }
+  if (f.q) {
+    // SQLite 的 LIKE 对 ASCII 本来就不分大小写，SHOPEE / shopee 都对得上
+    const pool = { OR: [{ name: { contains: f.q } }, { account: { name: { contains: f.q } } }] };
+    const or: Prisma.TransactionWhereInput[] = [
+      { description: { contains: f.q } },
+      { category: { name: { contains: f.q } } },
+      { cashHolding: pool },
+      { counterCashHolding: pool },
+    ];
+    const n = Number(f.q);
+    // 金额精确比对（容半分钱的浮点误差）：搜 12.5 不该把 125 也拉进来
+    if (Number.isFinite(n)) or.push({ amount: { gte: n - 0.005, lte: n + 0.005 } });
+    and.push({ OR: or });
+  }
+
+  const [transactions, fxRates] = await Promise.all([
+    listTransactions({ AND: and }, SEARCH_LIMIT),
+    prisma.fxRate.findMany(),
+  ]);
+  return { ...summarize(transactions, fxRates), truncated: transactions.length === SEARCH_LIMIT };
+}
+
+/**
+ * 列表 + 汇总的共用部分。月报与搜索结果都走这里 ——
+ * 两边各算一套口径，迟早会有「搜出来的支出跟月报对不上」（P0-04）。
+ */
+function summarize(
+  transactions: ListTx[],
+  fxRates: { base: string; quote: string; rate: number }[]
+) {
   const totals = { income: 0, expense: 0, invest: 0, transfer: 0 };
   const expenseByCategory = new Map<string, number>();
   const incomeByCategory = new Map<string, number>();
+  const byDay = new Map<string, { income: number; expense: number }>();
   let fxMissingCount = 0;
 
   const items = transactions.map((t) => {
@@ -417,6 +544,13 @@ export async function getMonthCashflow(userId: string, year: number, month: numb
       }
       if (t.type === "INVEST") totals.invest += countableMYR;
       if (t.type === "TRANSFER") totals.transfer += countableMYR;
+      if (t.type === "INCOME" || t.type === "EXPENSE") {
+        const day = t.date.toISOString().slice(0, 10);
+        const d = byDay.get(day) ?? { income: 0, expense: 0 };
+        if (t.type === "INCOME") d.income += countableMYR;
+        else d.expense += countableMYR;
+        byDay.set(day, d);
+      }
     }
     return {
       id: t.id,
@@ -441,10 +575,16 @@ export async function getMonthCashflow(userId: string, year: number, month: numb
   });
 
   return {
-    year,
-    month,
     items,
-    totals: { ...totals, net: totals.income - totals.expense },
+    totals: {
+      ...totals,
+      net: totals.income - totals.expense,
+      savingsRate: totals.income > 0 ? (totals.income - totals.expense) / totals.income : null,
+    },
+    // 列表按日分组时右侧的当天小计，跟上面 totals 同一口径
+    byDay: Array.from(byDay.entries())
+      .map(([date, d]) => ({ date, ...d }))
+      .sort((a, b) => b.date.localeCompare(a.date)),
     expenseByCategory: Array.from(expenseByCategory.entries())
       .map(([name, valueMYR]) => ({ name, valueMYR }))
       .sort((a, b) => b.valueMYR - a.valueMYR),
@@ -575,13 +715,27 @@ export async function listOutstandingReimbursements(
  * 要按热度排的呼叫端（记一笔的分类药丸）自己排 —— 那里 20+ 个分类按名字排，
  * 最高频的「餐饮」会落在最末尾，记一顿午餐得扫完整面墙。
  */
+/**
+ * 分类清单，**按真实使用频率排序**（P0-08）。
+ *
+ * 从前按名字排，于是收入的第一个选项是「还钱」、「工资」排在最后面 ——
+ * 那个顺序不对应任何人的使用习惯。每天要点的东西必须排在最前面，
+ * 而且每个使用者的顺序都该是他自己的，不是写死的一张表。
+ * 同样次数时按名字排，避免顺序在每次查询间跳动。
+ */
 export async function listCategories(userId: string) {
   const cats = await prisma.category.findMany({
     where: { userId },
-    orderBy: [{ type: "asc" }, { name: "asc" }],
     include: { _count: { select: { transactions: true } } },
   });
-  return cats.map(({ _count, ...c }) => ({ ...c, usageCount: _count.transactions }));
+  return cats
+    .map(({ _count, ...c }) => ({ ...c, usageCount: _count.transactions }))
+    .sort(
+      (a, b) =>
+        a.type.localeCompare(b.type) ||
+        b.usageCount - a.usageCount ||
+        a.name.localeCompare(b.name, "zh-Hans-CN")
+    );
 }
 
 /**
@@ -621,11 +775,3 @@ export async function ensureCategory(userId: string, name: string, type: TxType)
   });
 }
 
-/** 今天（吉隆坡时区）是否已有记录 —— 「今天还没记账」横幅用 */
-export async function hasTransactionToday(userId: string) {
-  const key = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur" }).format(new Date());
-  const start = new Date(`${key}T00:00:00.000Z`);
-  const end = new Date(start.getTime() + 86_400_000);
-  const count = await prisma.transaction.count({ where: { userId, date: { gte: start, lt: end } } });
-  return count > 0;
-}

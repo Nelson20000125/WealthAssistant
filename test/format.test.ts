@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatPct, formatShare, formatQuantity } from "@/lib/format";
+import { formatPct, formatShare, formatQuantity, formatMYR } from "@/lib/format";
 
 // 百分比有两种语义，先前共用同一个 formatPct（写死 signDisplay: "exceptZero"），
 // 结果占比也被加上了正号：
@@ -76,5 +76,26 @@ describe("formatQuantity —— 持仓份额", () => {
 
   it("末尾的零不保留", () => {
     expect(formatQuantity(2.5)).toBe("2.5");
+  });
+});
+
+// 需求（P0-10）：整个专案的金额一律 `RM 812.40`，compact 也要有那个空格。
+describe("金额格式统一", () => {
+  // Intl 的货币格式用的是不换行空格，compact 必须逐字元跟它一致，
+  // 否则两种写法产出的字串不同（视觉上看不出来，但就是两套格式）
+  const NB = " ";
+
+  it("compact 形式保留 RM 后面的空格", () => {
+    expect(formatMYR(812.40, true)).toBe(`RM${NB}812`);
+    expect(formatMYR(14_031.20, true)).toBe(`RM${NB}14K`);
+    expect(formatMYR(1_200_000, true)).toBe(`RM${NB}1.2M`);
+  });
+
+  it("负值把符号放最前面", () => {
+    expect(formatMYR(-2_500, true)).toBe(`-RM${NB}2.5K`);
+  });
+
+  it("完整形式与 compact 用同一个空格字元", () => {
+    expect(formatMYR(812.40)).toBe(`RM${NB}812.40`);
   });
 });
